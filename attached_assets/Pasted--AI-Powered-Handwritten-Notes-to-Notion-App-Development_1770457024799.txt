@@ -1,0 +1,844 @@
+# AI-Powered Handwritten Notes to Notion App - Development Prompt
+
+## Project Overview
+Build an Android mobile application that scans handwritten technical notes, converts them to digital format using AI/OCR, and automatically uploads them to the correct Notion pages. The app bridges the gap between handwritten note-taking (for better understanding) and digital organization (for searchability and persistence).
+
+---
+
+## Core Problem Statement
+The user takes technical study notes on Notion but often writes on pen and paper for better comprehension. Currently, these handwritten notes:
+- Risk being lost or misplaced
+- Cannot be searched easily
+- Are not integrated with their digital knowledge base
+- Create friction in maintaining a unified note system
+
+---
+
+## MVP Feature Requirements
+
+### 1. Image Capture & Processing
+**Requirements:**
+- Camera interface to capture handwritten notes (single or multiple pages)
+- Option to upload images from gallery
+- Image preprocessing to enhance OCR accuracy:
+  - Auto-rotation and perspective correction
+  - Contrast enhancement
+  - Noise reduction
+  - Edge detection for page boundaries
+- Support for various lighting conditions and paper types
+- Preview captured image before processing
+
+**Technical Considerations:**
+- Use Android CameraX API for camera functionality
+- Implement image preprocessing using OpenCV for Android
+- Batch processing capability for multiple pages in one session
+
+---
+
+### 2. OCR & Handwriting Recognition
+
+**Primary Requirements:**
+- Accurate conversion of handwritten text to digital format
+- Handle various handwriting styles (personal handwriting variation)
+- Recognize and preserve formatting elements:
+  - Bullet points and numbered lists
+  - Headers and subheadings
+  - Indentation and hierarchy
+  - Tables (detect rows/columns)
+  - Diagrams (capture as images with context)
+  - Code snippets (preserve monospace formatting)
+
+**Technical Implementation Options:**
+
+**Option A: Google ML Kit (Recommended for MVP)**
+- Text Recognition API with handwriting support
+- Runs on-device (privacy + offline capability)
+- Good accuracy for English handwriting
+- Free tier available
+- Limitations: May struggle with complex diagrams/tables
+
+**Option B: Azure Computer Vision / OCR**
+- High accuracy for handwriting
+- Better table/structure detection
+- Cloud-based (requires internet)
+- Cost considerations for API calls
+
+**Option C: Hybrid Approach**
+- ML Kit for basic text recognition
+- Azure/Google Cloud Vision for complex content (tables, diagrams)
+- User can choose quality level (fast/offline vs accurate/online)
+
+**Content Type Handling:**
+1. **Plain Text**: Convert directly to Notion text blocks
+2. **Diagrams**: 
+   - Detect diagram regions using contour detection
+   - Save as image
+   - Insert as image block in Notion with OCR'd surrounding context as caption
+3. **Tables**:
+   - Detect table structure (grid lines, cell boundaries)
+   - Convert to Notion table block with rows/columns
+   - Fallback: Insert as image if structure detection fails
+4. **Code Snippets**:
+   - Detect code blocks (monospace patterns, indentation)
+   - Convert to Notion code block
+   - Attempt language detection from context
+
+**Post-Processing:**
+- Confidence scoring for OCR results
+- Spell-check for technical terms
+- Preserve original scanned image as backup
+- Allow manual correction interface before upload
+
+---
+
+### 3. Notion Integration & Page Routing
+
+**MVP Approach: Manual Page Selection**
+
+**Workflow:**
+1. After OCR processing, show converted content preview
+2. Display Notion workspace structure (list of pages)
+3. User manually selects target page from list
+4. Option to create new page if one doesn't exist
+5. Upload content to selected page
+
+**Notion API Integration:**
+
+**Authentication:**
+- Implement OAuth 2.0 flow for Notion
+- Secure token storage using Android Keystore
+- Handle token refresh automatically
+
+**Page Discovery:**
+- Fetch user's Notion workspace structure
+- Cache page list for offline access
+- Search/filter functionality for quick page selection
+- Display page hierarchy (parent/child relationships)
+
+**Content Upload:**
+- Convert OCR output to Notion block format
+- Append to existing page content (with timestamp/separator)
+- Create new page with template structure if needed
+- Handle different block types:
+  - `paragraph` for text
+  - `heading_1`, `heading_2`, `heading_3` for headers
+  - `bulleted_list_item` / `numbered_list_item` for lists
+  - `code` for code snippets
+  - `image` for diagrams (upload to Notion CDN)
+  - `table` for tables
+
+**API Endpoints to Use:**
+- `GET /v1/search` - Search for pages
+- `GET /v1/databases/{database_id}/query` - If using databases
+- `POST /v1/pages` - Create new page
+- `PATCH /v1/blocks/{block_id}/children` - Append content to page
+- `POST /v1/files` - Upload images
+
+**Error Handling:**
+- Network failure recovery (queue uploads for retry)
+- API rate limiting management
+- Notion workspace permission validation
+
+---
+
+### 4. Future Enhancement: Automatic Page Routing
+
+**Phase 2 Implementation (Post-MVP):**
+
+**Strategy 1: Keyword Matching**
+- Extract keywords from OCR'd content
+- Match against Notion page titles and tags
+- Use TF-IDF or simple keyword frequency
+- Suggest top 3 matching pages with confidence scores
+
+**Strategy 2: AI-Powered Classification**
+- Fine-tune a small classifier model on user's existing Notion content
+- Use embeddings (sentence-transformers) for semantic matching
+- Learn from user's manual selections over time
+- Implement feedback loop to improve accuracy
+
+**Strategy 3: Header Detection**
+- OCR specifically looks for page headers/titles written at top
+- Match header text directly to Notion page names
+- User can write "Page: [Notion Page Name]" at top of notes
+
+**Implementation:**
+- Run routing algorithm after OCR
+- Show suggestion with confidence score
+- Allow user to accept/reject/modify
+- Track accuracy metrics to improve algorithm
+
+---
+
+## Technical Architecture
+
+### Tech Stack Recommendations
+
+**Frontend (Android App):**
+- **Language**: Kotlin (modern, Android-first)
+- **UI Framework**: Jetpack Compose (modern declarative UI)
+- **Architecture**: MVVM with Clean Architecture
+- **Camera**: CameraX API
+- **Image Processing**: OpenCV for Android
+- **Local Database**: Room (for caching pages, queued uploads)
+- **Networking**: Retrofit + OkHttp (for Notion API)
+- **Async Operations**: Kotlin Coroutines + Flow
+- **Dependency Injection**: Hilt
+
+**OCR/AI:**
+- **MVP**: Google ML Kit Text Recognition v2 (on-device)
+- **Alternative**: Azure Computer Vision API
+- **Image Enhancement**: OpenCV preprocessing pipeline
+
+**Backend (Optional, for future features):**
+- Not required for MVP (direct Notion API integration)
+- Consider for: usage analytics, model training, advanced routing
+
+**Storage:**
+- **Local**: Room database for cache
+- **Secure**: Android Keystore for API tokens
+- **Files**: Internal storage for temporary images
+
+---
+
+## App Architecture Design
+
+### Layer Structure
+
+```
+┌─────────────────────────────────────┐
+│         Presentation Layer          │
+│  (UI - Jetpack Compose + ViewModels)│
+└─────────────────────────────────────┘
+                  ↓
+┌─────────────────────────────────────┐
+│          Domain Layer               │
+│  (Use Cases / Business Logic)       │
+└─────────────────────────────────────┘
+                  ↓
+┌─────────────────────────────────────┐
+│          Data Layer                 │
+│  (Repositories + Data Sources)      │
+└─────────────────────────────────────┘
+                  ↓
+┌──────────────────┬──────────────────┐
+│  Notion API      │   Local Storage  │
+│  (Remote)        │   (Room DB)      │
+└──────────────────┴──────────────────┘
+```
+
+### Core Modules
+
+**1. Camera Module**
+- `CameraScreen.kt` - Compose UI for camera
+- `CameraViewModel.kt` - Handle camera state
+- `ImageCaptureUseCase.kt` - Capture and preprocess
+
+**2. OCR Module**
+- `OcrProcessor.kt` - Interface for OCR engines
+- `MlKitOcrProcessor.kt` - ML Kit implementation
+- `ImagePreprocessor.kt` - OpenCV enhancement
+- `ContentParser.kt` - Structure detection (tables, code, diagrams)
+
+**3. Notion Module**
+- `NotionRepository.kt` - API interaction layer
+- `NotionApiService.kt` - Retrofit interface
+- `NotionAuthManager.kt` - OAuth handling
+- `BlockConverter.kt` - OCR → Notion block format
+- `PageCache.kt` - Local page list storage
+
+**4. Upload Module**
+- `UploadQueue.kt` - Manage failed/pending uploads
+- `ContentUploadUseCase.kt` - Orchestrate upload process
+- `PageSelectionViewModel.kt` - Handle page selection UI
+
+---
+
+## Detailed Implementation Flow
+
+### Step-by-Step User Journey
+
+**1. First Time Setup**
+```
+User opens app
+  ↓
+Welcome screen
+  ↓
+"Connect to Notion" button
+  ↓
+Notion OAuth login (in WebView or browser)
+  ↓
+Receive access token
+  ↓
+Store token securely in Keystore
+  ↓
+Fetch and cache workspace pages
+  ↓
+Show home screen
+```
+
+**2. Capturing Notes**
+```
+Home screen → "Capture Notes" button
+  ↓
+Camera screen opens
+  ↓
+User positions page in frame
+  ↓
+Auto-detect page boundaries (OpenCV)
+  ↓
+User taps capture button
+  ↓
+Image preprocessing:
+  - Perspective correction
+  - Grayscale conversion
+  - Contrast enhancement
+  - Noise reduction
+  ↓
+Show preview with "Retake" / "Process" options
+  ↓
+User taps "Process"
+  ↓
+Loading screen with progress indicator
+```
+
+**3. OCR Processing**
+```
+Pass preprocessed image to ML Kit
+  ↓
+Receive raw text output
+  ↓
+Content structure analysis:
+  - Detect headers (larger text, underlined)
+  - Detect lists (bullets, numbers)
+  - Detect tables (grid patterns)
+  - Detect diagrams (contour regions)
+  - Detect code (monospace patterns)
+  ↓
+Build structured content object
+  ↓
+Show preview screen with:
+  - Original scanned image (top)
+  - Converted content (editable text)
+  - Detected structure indicators
+  ↓
+User can edit/correct text
+  ↓
+User taps "Next"
+```
+
+**4. Page Selection & Upload**
+```
+Show "Select Notion Page" screen
+  ↓
+Display cached page list (searchable)
+  ↓
+Options:
+  - Select existing page
+  - Create new page
+  ↓
+If "Create New":
+  - Show dialog with page name input
+  - Template selection (optional)
+  - Create via Notion API
+  - Add to cache
+  ↓
+User selects page
+  ↓
+Show confirmation:
+  - Target page name
+  - Content preview
+  - "Upload" button
+  ↓
+User taps "Upload"
+  ↓
+Convert content to Notion blocks
+  ↓
+Upload to Notion API
+  ↓
+Show success/failure message
+  ↓
+Option to:
+  - Capture another page
+  - View in Notion
+  - Return home
+```
+
+---
+
+## OCR Accuracy Optimization
+
+### Preprocessing Pipeline
+
+**Step 1: Image Quality Enhancement**
+```kotlin
+// Pseudocode
+fun preprocessImage(inputImage: Bitmap): Bitmap {
+    // 1. Convert to grayscale
+    val gray = cvtColor(inputImage, COLOR_BGR2GRAY)
+    
+    // 2. Detect page boundaries
+    val edges = Canny(gray, threshold1=50, threshold2=150)
+    val contours = findContours(edges)
+    val pageContour = findLargestRectangle(contours)
+    
+    // 3. Perspective correction
+    val warped = warpPerspective(gray, pageContour)
+    
+    // 4. Adaptive thresholding
+    val binary = adaptiveThreshold(warped, 
+        maxValue=255,
+        adaptiveMethod=ADAPTIVE_THRESH_GAUSSIAN_C,
+        blockSize=11,
+        C=2
+    )
+    
+    // 5. Noise removal
+    val denoised = morphologyEx(binary, MORPH_CLOSE, kernel)
+    
+    return denoised
+}
+```
+
+**Step 2: Content Region Detection**
+```kotlin
+fun detectContentRegions(image: Bitmap): List<ContentRegion> {
+    // Detect text regions
+    val textBlocks = detectTextBlocks(image)
+    
+    // Detect diagram regions (high contour density)
+    val diagramRegions = detectDiagrams(image)
+    
+    // Detect tables (grid patterns)
+    val tableRegions = detectTables(image)
+    
+    // Combine and return in reading order (top to bottom)
+    return sortByPosition(textBlocks + diagramRegions + tableRegions)
+}
+```
+
+**Step 3: OCR with Context**
+```kotlin
+fun performOCR(regions: List<ContentRegion>): StructuredContent {
+    val content = StructuredContent()
+    
+    for (region in regions) {
+        when (region.type) {
+            TEXT -> {
+                val text = mlKit.processImage(region.bitmap)
+                content.addTextBlock(text, region.formatting)
+            }
+            DIAGRAM -> {
+                val imageFile = saveDiagram(region.bitmap)
+                val caption = mlKit.processImage(region.surroundingText)
+                content.addDiagram(imageFile, caption)
+            }
+            TABLE -> {
+                val tableData = extractTableData(region.bitmap)
+                content.addTable(tableData)
+            }
+            CODE -> {
+                val code = mlKit.processImage(region.bitmap)
+                val language = detectLanguage(code)
+                content.addCode(code, language)
+            }
+        }
+    }
+    
+    return content
+}
+```
+
+### Improving Accuracy Over Time
+
+**1. User Feedback Loop**
+- After upload, ask "Was the OCR accurate?" (thumbs up/down)
+- Track problem areas (tables, diagrams, specific handwriting patterns)
+- Store corrections for future ML training
+
+**2. Personal Handwriting Adaptation**
+- Save user corrections as training data
+- Fine-tune ML Kit with user-specific samples (future enhancement)
+- Build personal character recognition dictionary
+
+**3. Technical Term Dictionary**
+- Pre-populate with common tech terms (API, JSON, React, etc.)
+- Learn new terms from user's Notion pages
+- Use for spell-check post-processing
+
+---
+
+## Notion Block Conversion Logic
+
+### Content Type Mapping
+
+```kotlin
+data class StructuredContent(
+    val blocks: List<ContentBlock>
+)
+
+sealed class ContentBlock {
+    data class Text(val content: String, val formatting: TextFormat) : ContentBlock()
+    data class Heading(val content: String, val level: Int) : ContentBlock()
+    data class List(val items: List<String>, val ordered: Boolean) : ContentBlock()
+    data class Code(val content: String, val language: String?) : ContentBlock()
+    data class Table(val rows: List<List<String>>) : ContentBlock()
+    data class Diagram(val imageFile: File, val caption: String) : ContentBlock()
+}
+
+// Converter
+class NotionBlockConverter {
+    
+    fun convert(content: StructuredContent): List<NotionBlock> {
+        return content.blocks.map { block ->
+            when (block) {
+                is Text -> createParagraphBlock(block.content)
+                is Heading -> createHeadingBlock(block.content, block.level)
+                is List -> createListBlocks(block.items, block.ordered)
+                is Code -> createCodeBlock(block.content, block.language)
+                is Table -> createTableBlock(block.rows)
+                is Diagram -> createImageBlock(block.imageFile, block.caption)
+            }
+        }.flatten()
+    }
+    
+    private fun createParagraphBlock(text: String): NotionBlock {
+        return NotionBlock(
+            type = "paragraph",
+            paragraph = Paragraph(
+                richText = listOf(RichText(text = Text(content = text)))
+            )
+        )
+    }
+    
+    private fun createHeadingBlock(text: String, level: Int): NotionBlock {
+        val type = when(level) {
+            1 -> "heading_1"
+            2 -> "heading_2"
+            else -> "heading_3"
+        }
+        return NotionBlock(
+            type = type,
+            heading = Heading(
+                richText = listOf(RichText(text = Text(content = text)))
+            )
+        )
+    }
+    
+    // ... similar for other types
+}
+```
+
+### Upload Strategy
+
+**Batch Upload:**
+```kotlin
+suspend fun uploadToNotion(pageId: String, blocks: List<NotionBlock>) {
+    // Add timestamp separator
+    val separator = createParagraphBlock("--- Notes added on ${getCurrentDateTime()} ---")
+    
+    // Notion API allows max 100 blocks per request
+    val allBlocks = listOf(separator) + blocks
+    
+    allBlocks.chunked(100).forEach { chunk ->
+        notionApi.appendBlocks(
+            blockId = pageId,
+            children = chunk
+        )
+        delay(100) // Respect rate limits
+    }
+}
+```
+
+---
+
+## Error Handling & Edge Cases
+
+### 1. OCR Failures
+- **Problem**: Low confidence score, gibberish output
+- **Solution**: 
+  - Show confidence score to user
+  - Suggest retaking photo with better lighting
+  - Allow manual text entry as fallback
+  - Save original image for later reprocessing
+
+### 2. Notion API Errors
+- **Problem**: Network failure, rate limiting, permission errors
+- **Solution**:
+  - Implement upload queue with retry logic
+  - Exponential backoff for retries
+  - Store failed uploads locally
+  - Background sync when network returns
+  - Clear error messages to user
+
+### 3. Page Not Found
+- **Problem**: User's Notion page was deleted/moved
+- **Solution**:
+  - Refresh page cache before upload
+  - Show error and prompt to select different page
+  - Option to create new page
+
+### 4. Large Images
+- **Problem**: Diagram images too large for Notion
+- **Solution**:
+  - Compress images before upload
+  - Max 5MB per image (Notion limit)
+  - Quality adjustment slider for user
+
+### 5. Mixed Languages
+- **Problem**: Notes in multiple languages
+- **Solution**:
+  - ML Kit supports 100+ languages
+  - Auto-detect language per text region
+  - Handle multilingual content in single note
+
+---
+
+## Data Privacy & Security
+
+### 1. Image Handling
+- Process images on-device (ML Kit)
+- Delete temporary images after upload
+- Option to keep local backup (encrypted)
+- Never upload raw images to third-party servers
+
+### 2. Notion Token Security
+- Store access token in Android Keystore (hardware-backed)
+- Never log tokens
+- Automatic token refresh
+- Logout clears all stored credentials
+
+### 3. Permissions
+- Camera: Required for note capture
+- Storage: Required for gallery upload
+- Network: Required for Notion API
+- Clearly explain permissions in-app
+
+---
+
+## Performance Considerations
+
+### 1. OCR Processing Time
+- **Target**: < 5 seconds for single page
+- **Optimization**:
+  - Process on background thread
+  - Show progress indicator
+  - Optimize image size before OCR (max 2048px width)
+
+### 2. App Size
+- **Target**: < 50 MB
+- ML Kit adds ~10-15 MB
+- Use APK splits for different device configs
+
+### 3. Battery Usage
+- Camera and OCR are intensive
+- Process in batches when possible
+- Avoid continuous camera preview when not needed
+
+### 4. Memory Management
+- Large bitmap handling with proper recycling
+- Use Glide/Coil for image loading
+- Implement proper lifecycle awareness
+
+---
+
+## Testing Strategy
+
+### Unit Tests
+- OCR content parsing logic
+- Notion block conversion
+- Image preprocessing algorithms
+
+### Integration Tests
+- Notion API interaction
+- OAuth flow
+- Upload queue management
+
+### UI Tests
+- Camera flow
+- Page selection
+- Content preview/editing
+
+### Manual Testing Checklist
+- [ ] Various handwriting styles
+- [ ] Different lighting conditions
+- [ ] Diagrams with varying complexity
+- [ ] Tables with different row/column counts
+- [ ] Code snippets in multiple languages
+- [ ] Multi-page batch processing
+- [ ] Offline mode (queue uploads)
+- [ ] Network interruption during upload
+- [ ] Notion workspace with 100+ pages
+- [ ] New page creation
+- [ ] Edge cases (rotated images, shadows, wrinkled paper)
+
+---
+
+## Development Roadmap
+
+### Phase 1: MVP (4-6 weeks)
+**Week 1-2: Core Infrastructure**
+- [ ] Project setup (Kotlin, Compose, Hilt)
+- [ ] Notion OAuth implementation
+- [ ] Basic page list fetching and caching
+- [ ] Token storage with Keystore
+
+**Week 2-3: Camera & OCR**
+- [ ] Camera UI with CameraX
+- [ ] Image preprocessing pipeline (OpenCV)
+- [ ] ML Kit integration
+- [ ] Basic text extraction
+
+**Week 3-4: Content Processing**
+- [ ] Structure detection (headers, lists)
+- [ ] Notion block conversion
+- [ ] Content preview/editing UI
+
+**Week 4-5: Upload & Integration**
+- [ ] Page selection UI
+- [ ] Upload to Notion API
+- [ ] Error handling and retry logic
+- [ ] Success/failure feedback
+
+**Week 5-6: Polish & Testing**
+- [ ] UI/UX refinement
+- [ ] Comprehensive testing
+- [ ] Bug fixes
+- [ ] Documentation
+
+### Phase 2: Enhanced Features (2-3 weeks)
+- [ ] Diagram detection and image upload
+- [ ] Table structure recognition
+- [ ] Code snippet detection
+- [ ] Batch multi-page processing
+- [ ] Upload queue with background sync
+
+### Phase 3: Intelligence (3-4 weeks)
+- [ ] Automatic page routing (keyword matching)
+- [ ] ML-based page suggestions
+- [ ] Learning from user corrections
+- [ ] Technical term dictionary
+
+### Phase 4: Future Enhancements
+- [ ] Tablet support with stylus integration
+- [ ] Dark mode
+- [ ] Export to other platforms (Google Docs, Markdown)
+- [ ] Collaboration features (share scanned notes)
+- [ ] Analytics dashboard (notes per week, accuracy metrics)
+
+---
+
+## Success Metrics
+
+### MVP Success Criteria
+- [ ] OCR accuracy > 85% for clear handwriting
+- [ ] Upload success rate > 95%
+- [ ] End-to-end flow completion < 30 seconds
+- [ ] Zero crashes for primary user flows
+- [ ] Successfully handles 10+ pages in cache
+
+### User Experience Metrics
+- [ ] User completes first successful upload within 5 minutes
+- [ ] User satisfaction with OCR accuracy (thumbs up > 80%)
+- [ ] Repeat usage rate (user scans notes weekly)
+
+---
+
+## Potential Challenges & Mitigations
+
+### Challenge 1: OCR Accuracy for Poor Handwriting
+**Mitigation**: 
+- Implement manual correction UI
+- Provide tips for better handwriting (dark pen, lined paper)
+- Use hybrid approach (on-device + cloud OCR for difficult content)
+
+### Challenge 2: Complex Diagram Recognition
+**Mitigation**:
+- Start with simple diagram → image conversion
+- Add OCR for diagram labels in Phase 2
+- User can manually annotate diagrams before upload
+
+### Challenge 3: Notion API Rate Limits
+**Mitigation**:
+- Implement exponential backoff
+- Batch operations where possible
+- Queue system for background uploads
+- Clear communication to user about limits
+
+### Challenge 4: Large Notion Workspaces (1000+ pages)
+**Mitigation**:
+- Implement pagination in page list
+- Search functionality with debouncing
+- Cache frequently used pages
+- Option to filter by database or parent page
+
+---
+
+## Alternative Approaches Considered
+
+### 1. MCP (Model Context Protocol) vs Direct Notion API
+**Decision: Start with Notion API for MVP**
+- MCP adds complexity and is still emerging
+- Direct API is well-documented and stable
+- Can explore MCP in Phase 3 if needed for advanced features
+
+### 2. On-Device vs Cloud OCR
+**Decision: Hybrid approach**
+- ML Kit for speed and privacy (default)
+- Option for cloud OCR for accuracy (user choice)
+
+### 3. Native Android vs React Native/Flutter
+**Decision: Native Android (Kotlin)**
+- Better performance for image processing
+- First-class CameraX support
+- Easier ML Kit integration
+- Can expand to iOS later if needed
+
+---
+
+## Getting Started Checklist
+
+Before starting development:
+- [ ] Create Notion integration at https://www.notion.so/my-integrations
+- [ ] Set up OAuth redirect URIs
+- [ ] Install Android Studio (latest version)
+- [ ] Set up test Notion workspace with sample tech notes
+- [ ] Prepare sample handwritten notes for testing
+- [ ] Create Firebase project (for ML Kit)
+- [ ] Review Notion API documentation
+- [ ] Set up version control (Git repository)
+
+---
+
+## Additional Resources
+
+### Documentation
+- [Notion API Reference](https://developers.notion.com/reference/intro)
+- [ML Kit Text Recognition](https://developers.google.com/ml-kit/vision/text-recognition/v2)
+- [Android CameraX](https://developer.android.com/training/camerax)
+- [OpenCV Android](https://docs.opencv.org/4.x/d5/df8/tutorial_dev_with_OCV_on_Android.html)
+
+### Code Examples
+- Notion API OAuth: https://github.com/makenotion/notion-sdk-kotlin
+- ML Kit handwriting: https://github.com/googlesamples/mlkit
+- CameraX samples: https://github.com/android/camera-samples
+
+---
+
+## Questions for Clarification During Development
+
+1. **Notion Structure**: What's your typical page hierarchy depth?
+2. **Note Frequency**: How many pages do you scan per week?
+3. **Average Page Length**: How many handwritten pages per topic typically?
+4. **Diagram Complexity**: Simple flowcharts or detailed technical diagrams?
+5. **Preferred Formatting**: Do you want to preserve exact formatting or normalize to Notion's style?
+
+---
+
+## Final Notes
+
+This is a comprehensive guide for building your MVP. Start with the core flow (capture → OCR → manual selection → upload) and iterate based on real usage. The modular architecture allows you to add advanced features (auto-routing, diagram recognition) incrementally without major refactoring.
+
+Focus on making the happy path smooth and reliable first, then handle edge cases and optimizations. The key to success is iterating quickly based on your own usage patterns.
+
+Good luck with your build! 🚀
