@@ -20,6 +20,7 @@ interface UserRow {
   password: string;
   name: string | null;
   notion_api_key: string | null;
+  groq_api_key: string | null;
   created_at: number;
 }
 
@@ -55,7 +56,7 @@ export async function registerHandler(req: Request, res: Response) {
     dbRun("INSERT INTO users (id, email, password, name) VALUES (?, ?, ?, ?)", [id, email.toLowerCase(), hashed, name || null]);
 
     const token = jwt.sign({ userId: id }, JWT_SECRET, { expiresIn: "30d" });
-    res.json({ token, user: { id, email: email.toLowerCase(), name: name || null, notionConnected: false } });
+    res.json({ token, user: { id, email: email.toLowerCase(), name: name || null, notionConnected: false, groqConnected: false } });
   } catch (err) {
     console.error("Register error:", err);
     res.status(500).json({ error: "Failed to create account" });
@@ -76,7 +77,7 @@ export async function loginHandler(req: Request, res: Response) {
     const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: "30d" });
     res.json({
       token,
-      user: { id: user.id, email: user.email, name: user.name, notionConnected: !!user.notion_api_key },
+      user: { id: user.id, email: user.email, name: user.name, notionConnected: !!user.notion_api_key, groqConnected: !!user.groq_api_key },
     });
   } catch (err) {
     console.error("Login error:", err);
@@ -88,7 +89,7 @@ export function getMeHandler(req: AuthRequest, res: Response) {
   try {
     const user = dbGet<UserRow>("SELECT * FROM users WHERE id = ?", [req.userId!]);
     if (!user) return res.status(404).json({ error: "User not found" });
-    res.json({ id: user.id, email: user.email, name: user.name, notionConnected: !!user.notion_api_key });
+    res.json({ id: user.id, email: user.email, name: user.name, notionConnected: !!user.notion_api_key, groqConnected: !!user.groq_api_key });
   } catch (err) {
     res.status(500).json({ error: "Failed to fetch user" });
   }

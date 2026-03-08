@@ -16,10 +16,7 @@ import {
 // Groq Vision OCR (free tier: 14,400 req/day)
 // ============================================================
 
-async function callGroqVision(base64Image: string): Promise<string> {
-  const apiKey = process.env.GROQ_API_KEY;
-  if (!apiKey) throw new Error("Missing GROQ_API_KEY in .env — get a free key at console.groq.com");
-
+async function callGroqVision(apiKey: string, base64Image: string): Promise<string> {
   const prompt = `You are an expert at reading handwritten notes and converting them into well-structured digital text.
 
 Rules:
@@ -100,6 +97,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ── User Groq Key ──────────────────────────────────────────
+  app.put("/api/user/groq-key", authMiddleware, express.json(), async (req: AuthRequest, res) => {
+    try {
+      const { groqApiKey } = req.body;
+      if (!groqApiKey) return res.status(400).json({ error: "groqApiKey is required" });
+      dbRun("UPDATE users SET groq_api_key = ? WHERE id = ?", [groqApiKey.trim(), req.userId!]);
+      res.json({ success: true });
+    } catch (err) {
+      console.error("Update groq key error:", err);
+      res.status(500).json({ error: "Failed to update Groq key" });
+    }
+  });
+
+  app.delete("/api/user/groq-key", authMiddleware, async (req: AuthRequest, res) => {
+    try {
+      dbRun("UPDATE users SET groq_api_key = NULL WHERE id = ?", [req.userId!]);
+      res.json({ success: true });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to remove Groq key" });
+    }
+  });
+
   // ── Scan history ───────────────────────────────────────────
   app.get("/api/scans", authMiddleware, (req: AuthRequest, res) => {
     try {
@@ -160,9 +179,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { image } = req.body;
       if (!image) return res.status(400).json({ error: "image is required" });
 
+      // Look up the user's personal Groq key from the DB
+      const userRow = dbGet<{ groq_api_key: string | null }>("SELECT groq_api_key FROM users WHERE id = ?", [req.userId!]);
+      if (!userRow?.groq_api_key) {
+        return res.status(403).json({
+          error: "Groq API key not configured. Please add your Groq API key in the app Settings."
+        });
+      }
+
       let extractedText: string;
       try {
-        extractedText = await callGroqVision(image);
+        extractedText = await callGroqVision(userRow.groq_api_key, image);
       } catch (err: any) {
         if (err.status === 429) {
           return res.status(429).json({ error: "OCR rate limit reached. Please wait a minute and try again." });

@@ -26,6 +26,7 @@ sqlite.exec(`
     password TEXT NOT NULL,
     name TEXT,
     notion_api_key TEXT,
+    groq_api_key TEXT,
     created_at INTEGER DEFAULT (unixepoch())
   );
 
@@ -40,6 +41,13 @@ sqlite.exec(`
     created_at INTEGER DEFAULT (unixepoch())
   );
 `);
+
+// Migrate existing databases: add groq_api_key if it doesn't exist yet
+try {
+  sqlite.exec("ALTER TABLE users ADD COLUMN groq_api_key TEXT;");
+} catch {
+  // Column already exists — ignore
+}
 
 console.log("✅ SQLite DB ready at: " + dbPath);
 
