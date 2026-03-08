@@ -39,3 +39,13 @@ yarn-error.*
 .vercel
 
 .env
+
+# SQLite database (auto-created, do not commit)
+data/
+
+# Replit / local state
+.local/
+
+# Production build output
+server_dist/
+static-build/

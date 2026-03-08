@@ -21,9 +21,11 @@ import Colors from '@/constants/colors';
 import { getPendingScan, setPendingUpload } from '@/lib/pending-scan';
 import { getScans, updateScan } from '@/lib/storage';
 import { getApiUrl } from '@/lib/query-client';
+import { useAuth } from '@/lib/auth-context';
 
 export default function PreviewScreen() {
   const insets = useSafeAreaInsets();
+  const { token, user } = useAuth();
   const params = useLocalSearchParams<{ scanId?: string; viewOnly?: string }>();
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
   const bottomInset = Platform.OS === 'web' ? 34 : insets.bottom;
@@ -78,17 +80,34 @@ export default function PreviewScreen() {
     setError(null);
 
     try {
+      if (!user?.groqConnected) {
+        Alert.alert(
+          'Groq API Key Required',
+          'Please add your Groq API key in Settings to scan notes.',
+          [
+            { text: 'Go to Settings', onPress: () => router.push('/settings') },
+            { text: 'Cancel', style: 'cancel' },
+          ]
+        );
+        setIsProcessing(false);
+        return;
+      }
+
       const baseUrl = getApiUrl();
       const url = new URL('/api/scan', baseUrl);
 
       const response = await fetch(url.toString(), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
         body: JSON.stringify({ image: base64 }),
       });
 
       if (!response.ok) {
-        throw new Error('Failed to process image');
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || 'Failed to process image');
       }
 
       const data = await response.json();

@@ -39,6 +39,5 @@ export async function updateScan(id: string, updates: Partial<ScanRecord>): Prom
 
 export async function deleteScan(id: string): Promise<void> {
   const scans = await getScans();
-  const filtered = scans.filter(s => s.id !== id);
-  await AsyncStorage.setItem(SCANS_KEY, JSON.stringify(filtered));
+  await AsyncStorage.setItem(SCANS_KEY, JSON.stringify(scans.filter(s => s.id !== id)));
 }

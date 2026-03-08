@@ -19,6 +19,7 @@ import Colors from '@/constants/colors';
 import { getPendingUpload, clearPendingUpload } from '@/lib/pending-scan';
 import { updateScan } from '@/lib/storage';
 import { getApiUrl } from '@/lib/query-client';
+import { useAuth } from '@/lib/auth-context';
 
 interface NotionPage {
   id: string;
@@ -30,6 +31,7 @@ interface NotionPage {
 
 export default function SelectPageScreen() {
   const insets = useSafeAreaInsets();
+  const { token } = useAuth();
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
   const bottomInset = Platform.OS === 'web' ? 34 : insets.bottom;
 
@@ -61,7 +63,9 @@ export default function SelectPageScreen() {
     try {
       const baseUrl = getApiUrl();
       const url = new URL('/api/notion/pages', baseUrl);
-      const response = await fetch(url.toString());
+      const response = await fetch(url.toString(), {
+        headers: { Authorization: `Bearer ${token}` },
+      });
 
       if (!response.ok) {
         const data = await response.json();
@@ -97,7 +101,7 @@ export default function SelectPageScreen() {
       const url = new URL('/api/notion/upload', baseUrl);
       const response = await fetch(url.toString(), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({
           pageId: page.id,
           content: uploadData.extractedText,
