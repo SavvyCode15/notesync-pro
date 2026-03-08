@@ -31,6 +31,11 @@ export default function SettingsScreen() {
   const [notionKey, setNotionKey] = useState('');
   const [savingKey, setSavingKey] = useState(false);
 
+  const [showGroqInput, setShowGroqInput] = useState(false);
+  const [groqKey, setGroqKey] = useState('');
+  const [savingGroqKey, setSavingGroqKey] = useState(false);
+  const groqConnected = user?.groqConnected ?? false;
+
   useEffect(() => {
     if (token) checkNotionStatus();
   }, [token]);
@@ -98,6 +103,52 @@ export default function SettingsScreen() {
             setNotionUser('');
           } catch {
             Alert.alert('Error', 'Failed to disconnect Notion.');
+          }
+        },
+      },
+    ]);
+  }
+
+  async function handleSaveGroqKey() {
+    if (!groqKey.trim()) {
+      Alert.alert('Missing key', 'Please paste your Groq API key.');
+      return;
+    }
+    setSavingGroqKey(true);
+    try {
+      const baseUrl = getApiUrl();
+      const resp = await fetch(new URL('/api/user/groq-key', baseUrl).toString(), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ groqApiKey: groqKey.trim() }),
+      });
+      if (!resp.ok) throw new Error('Failed');
+      setGroqKey('');
+      setShowGroqInput(false);
+      await refreshUser();
+    } catch {
+      Alert.alert('Error', 'Failed to save the Groq key. Please try again.');
+    } finally {
+      setSavingGroqKey(false);
+    }
+  }
+
+  async function handleDisconnectGroq() {
+    Alert.alert('Disconnect Groq', 'Remove your Groq API key?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            const baseUrl = getApiUrl();
+            await fetch(new URL('/api/user/groq-key', baseUrl).toString(), {
+              method: 'DELETE',
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            await refreshUser();
+          } catch {
+            Alert.alert('Error', 'Failed to remove Groq key.');
           }
         },
       },
@@ -211,6 +262,63 @@ export default function SettingsScreen() {
           )}
         </Animated.View>
 
+        {/* Groq OCR card */}
+        <Animated.View entering={FadeInDown.delay(200).duration(400)} style={styles.statusCard}>
+          <View style={styles.statusHeader}>
+            <View style={styles.notionIconWrap}>
+              <Ionicons name="flash-outline" size={20} color={Colors.accent} />
+            </View>
+            <View style={styles.statusInfo}>
+              <Text style={styles.statusLabel}>Groq AI (OCR)</Text>
+              <View style={styles.statusBadge}>
+                <View style={[styles.statusDot, { backgroundColor: groqConnected ? Colors.success : Colors.danger }]} />
+                <Text style={[styles.statusValue, { color: groqConnected ? Colors.success : Colors.danger }]}>
+                  {groqConnected ? 'Key Saved' : 'Not Connected'}
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          {groqConnected ? (
+            <View style={styles.connectedActions}>
+              <Pressable style={({ pressed }) => [styles.actionButton, styles.actionButtonDanger, pressed && { opacity: 0.7 }]} onPress={handleDisconnectGroq}>
+                <Feather name="x" size={14} color={Colors.danger} />
+                <Text style={[styles.actionButtonText, { color: Colors.danger }]}>Remove Key</Text>
+              </Pressable>
+            </View>
+          ) : (
+            <>
+              {!showGroqInput ? (
+                <Pressable style={({ pressed }) => [styles.connectButton, pressed && { opacity: 0.8 }]} onPress={() => setShowGroqInput(true)}>
+                  <Feather name="key" size={16} color={Colors.accent} />
+                  <Text style={styles.connectButtonText}>Add Groq Key</Text>
+                </Pressable>
+              ) : (
+                <View style={styles.keyInputContainer}>
+                  <TextInput
+                    style={styles.keyInput}
+                    placeholder="Paste your Groq API key (gsk_...)"
+                    placeholderTextColor={Colors.textTertiary}
+                    value={groqKey}
+                    onChangeText={setGroqKey}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    selectionColor={Colors.accent}
+                  />
+                  <View style={styles.keyInputActions}>
+                    <Pressable style={({ pressed }) => [styles.keyActionButton, pressed && { opacity: 0.7 }]} onPress={() => { setShowGroqInput(false); setGroqKey(''); }}>
+                      <Text style={styles.keyActionCancel}>Cancel</Text>
+                    </Pressable>
+                    <Pressable style={({ pressed }) => [styles.keyActionButton, styles.keyActionSave, pressed && { opacity: 0.8 }]} onPress={handleSaveGroqKey} disabled={savingGroqKey}>
+                      {savingGroqKey ? <ActivityIndicator size="small" color={Colors.background} /> : <Text style={styles.keyActionSaveText}>Save</Text>}
+                    </Pressable>
+                  </View>
+                </View>
+              )}
+            </>
+          )}
+        </Animated.View>
+
         {/* Setup guide (shown when not connected) */}
         {notionStatus !== 'connected' && !showKeyInput && (
           <>
@@ -231,6 +339,10 @@ export default function SettingsScreen() {
               <Pressable style={({ pressed }) => [styles.linkButton, pressed && { opacity: 0.8 }]} onPress={() => Linking.openURL('https://www.notion.so/my-integrations')}>
                 <Feather name="external-link" size={16} color={Colors.accent} />
                 <Text style={styles.linkButtonText}>Open Notion Integrations</Text>
+              </Pressable>
+              <Pressable style={({ pressed }) => [styles.linkButton, { marginTop: 10 }, pressed && { opacity: 0.8 }]} onPress={() => Linking.openURL('https://console.groq.com')}>
+                <Feather name="external-link" size={16} color={Colors.accent} />
+                <Text style={styles.linkButtonText}>Get Free Groq API Key</Text>
               </Pressable>
             </Animated.View>
           </>
