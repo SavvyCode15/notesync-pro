@@ -28,13 +28,13 @@ function ScanCardItem({ item, onDelete }: { item: ScanRecord; onDelete: (id: str
 
   const statusColor = item.status === 'uploaded' ? Colors.success
     : item.status === 'failed' ? Colors.danger
-    : item.status === 'processing' ? Colors.info
-    : Colors.accentLight;
+      : item.status === 'processing' ? Colors.info
+        : Colors.accentLight;
 
   const statusLabel = item.status === 'uploaded' ? 'Uploaded'
     : item.status === 'failed' ? 'Failed'
-    : item.status === 'processing' ? 'Processing'
-    : 'Ready';
+      : item.status === 'processing' ? 'Processing'
+        : 'Ready';
 
   return (
     <Pressable
@@ -63,7 +63,10 @@ function ScanCardItem({ item, onDelete }: { item: ScanRecord; onDelete: (id: str
           <Text style={[styles.statusText, { color: statusColor }]}>{statusLabel}</Text>
         </View>
       </View>
-      <Text style={styles.cardPreview} numberOfLines={3}>{preview}</Text>
+      <Text style={styles.cardTitle} numberOfLines={1}>
+        {item.title || (item.status === 'processing' ? 'Processing...' : 'Untitled Note')}
+      </Text>
+      <Text style={styles.cardPreview} numberOfLines={2}>{preview}</Text>
       {item.notionPageTitle ? (
         <View style={styles.cardFooter}>
           <Ionicons name="document-text-outline" size={13} color={Colors.accent} />
@@ -116,15 +119,15 @@ export default function HomeScreen() {
 
       const result = useCamera
         ? await ImagePicker.launchCameraAsync({
-            mediaTypes: ['images'],
-            quality: 0.8,
-            base64: true,
-          })
+          mediaTypes: ['images'],
+          quality: 0.8,
+          base64: true,
+        })
         : await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ['images'],
-            quality: 0.8,
-            base64: true,
-          });
+          mediaTypes: ['images'],
+          quality: 0.8,
+          base64: true,
+        });
 
       if (result.canceled || !result.assets?.[0]) {
         setLoading(false);
@@ -348,6 +351,12 @@ const styles = StyleSheet.create({
   statusText: {
     fontFamily: 'Inter_500Medium',
     fontSize: 11,
+  },
+  cardTitle: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 15,
+    color: Colors.text,
+    marginBottom: 4,
   },
   cardPreview: {
     fontFamily: 'Inter_400Regular',

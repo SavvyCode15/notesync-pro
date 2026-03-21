@@ -7,6 +7,7 @@ let pendingScanData: {
 let pendingUploadData: {
   scanId: string;
   extractedText: string;
+  title?: string;
 } | null = null;
 
 export function setPendingScan(data: typeof pendingScanData) {

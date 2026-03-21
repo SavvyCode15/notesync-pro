@@ -1,6 +1,7 @@
 import express from "express";
 import type { Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
+import { initDb } from "./db";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -57,7 +58,10 @@ function setupCors(app: express.Application) {
     // Allow *.up.railway.app (if deployed on Railway)
     const isRailway = origin?.endsWith(".up.railway.app");
 
-    if (origin && (origins.has(origin) || isLocalhost || isRailway)) {
+    // Allow *.onrender.com (deployed on Render)
+    const isRender = origin?.endsWith(".onrender.com");
+
+    if (origin && (origins.has(origin) || isLocalhost || isRailway || isRender)) {
       res.header("Access-Control-Allow-Origin", origin);
       res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
       res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
@@ -251,7 +255,7 @@ function setupErrorHandler(app: express.Application) {
   setupBodyParsing(app);
   setupRequestLogging(app);
 
-  configureExpoAndLanding(app);
+  await initDb();
 
   const server = await registerRoutes(app);
 

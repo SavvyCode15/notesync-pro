@@ -23,7 +23,7 @@ const NOTION_CLIENT_SECRET = process.env.NOTION_CLIENT_SECRET ?? null;
 const JWT_SECRET = process.env.JWT_SECRET || "notesync-dev-secret-change-in-production";
 
 // ============================================================
-// Groq Vision OCR (free tier: 14,400 req/day)
+// Groq Vision OCR
 // ============================================================
 
 async function callGroqVision(apiKey: string, base64Image: string): Promise<string> {
@@ -71,15 +71,42 @@ Please convert these handwritten notes into well-structured Markdown.`;
   return data?.choices?.[0]?.message?.content ?? "";
 }
 
-function getNotionClientForUser(userId: string): Client | null {
-  const key = getNotionKeyForUser(userId);
+/**
+ * Generates a short 4-6 word title for a note using Groq.
+ * Uses the faster llama-3.1-8b model to keep latency low.
+ */
+async function generateNoteTitle(apiKey: string, extractedText: string): Promise<string> {
+  try {
+    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model: "llama-3.1-8b-instant",
+        messages: [{
+          role: "user",
+          content: `Create a short, descriptive title (4-6 words maximum) for these notes. Reply with ONLY the title, no quotes, no punctuation at the end.\n\nNotes:\n${extractedText.slice(0, 500)}`,
+        }],
+        max_tokens: 20,
+      }),
+    });
+    if (!res.ok) return "Untitled Note";
+    const data = await res.json() as any;
+    const title = data?.choices?.[0]?.message?.content?.trim() ?? "Untitled Note";
+    return title.slice(0, 60); // cap at 60 chars
+  } catch {
+    return "Untitled Note";
+  }
+}
+
+async function getNotionClientForUser(userId: string): Promise<Client | null> {
+  const key = await getNotionKeyForUser(userId);
   if (!key) return null;
   return new Client({ auth: key });
 }
 
 /** Count how many scans this user has submitted today (UTC). */
-function getDailyScanCount(userId: string): number {
-  const row = dbGet<{ c: number }>(
+async function getDailyScanCount(userId: string): Promise<number> {
+  const row = await dbGet<{ c: number }>(
     "SELECT COUNT(*) as c FROM scans WHERE user_id = ? AND date(created_at, 'unixepoch') = date('now')",
     [userId]
   );
@@ -99,58 +126,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { notionApiKey } = req.body;
       if (!notionApiKey) return res.status(400).json({ error: "notionApiKey is required" });
-      dbRun("UPDATE users SET notion_api_key = ? WHERE id = ?", [notionApiKey.trim(), req.userId!]);
+      await dbRun("UPDATE users SET notion_api_key = ? WHERE id = ?", [notionApiKey.trim(), req.userId!]);
       res.json({ success: true });
     } catch (err) {
-      console.error("Update notion key error:", err);
       res.status(500).json({ error: "Failed to update Notion key" });
     }
   });
 
   app.delete("/api/user/notion-key", authMiddleware, async (req: AuthRequest, res) => {
     try {
-      dbRun("UPDATE users SET notion_api_key = NULL WHERE id = ?", [req.userId!]);
+      await dbRun("UPDATE users SET notion_api_key = NULL WHERE id = ?", [req.userId!]);
       res.json({ success: true });
-    } catch (err) {
+    } catch {
       res.status(500).json({ error: "Failed to disconnect Notion" });
     }
   });
 
-  // ── User Groq Key ──────────────────────────────────────────
+  // ── User Groq Key ─────────────────────────────────────────
   app.put("/api/user/groq-key", authMiddleware, express.json(), async (req: AuthRequest, res) => {
     try {
       const { groqApiKey } = req.body;
       if (!groqApiKey) return res.status(400).json({ error: "groqApiKey is required" });
-      dbRun("UPDATE users SET groq_api_key = ? WHERE id = ?", [groqApiKey.trim(), req.userId!]);
+      await dbRun("UPDATE users SET groq_api_key = ? WHERE id = ?", [groqApiKey.trim(), req.userId!]);
       res.json({ success: true });
-    } catch (err) {
-      console.error("Update groq key error:", err);
+    } catch {
       res.status(500).json({ error: "Failed to update Groq key" });
     }
   });
 
   app.delete("/api/user/groq-key", authMiddleware, async (req: AuthRequest, res) => {
     try {
-      dbRun("UPDATE users SET groq_api_key = NULL WHERE id = ?", [req.userId!]);
+      await dbRun("UPDATE users SET groq_api_key = NULL WHERE id = ?", [req.userId!]);
       res.json({ success: true });
-    } catch (err) {
+    } catch {
       res.status(500).json({ error: "Failed to remove Groq key" });
     }
   });
 
   // ── Scan usage (daily free tier) ─────────────────────────
-  app.get("/api/user/scan-usage", authMiddleware, (req: AuthRequest, res) => {
+  app.get("/api/user/scan-usage", authMiddleware, async (req: AuthRequest, res) => {
     try {
-      const used = getDailyScanCount(req.userId!);
+      const used = await getDailyScanCount(req.userId!);
       res.json({ used, limit: FREE_SCANS_PER_DAY, remaining: Math.max(0, FREE_SCANS_PER_DAY - used) });
-    } catch (err) {
+    } catch {
       res.status(500).json({ error: "Failed to fetch scan usage" });
     }
   });
 
-  app.get("/api/scans", authMiddleware, (req: AuthRequest, res) => {
+  // ── Scan CRUD ─────────────────────────────────────────────
+  app.get("/api/scans", authMiddleware, async (req: AuthRequest, res) => {
     try {
-      const userScans = dbAll("SELECT * FROM scans WHERE user_id = ? ORDER BY created_at DESC", [req.userId!]);
+      const userScans = await dbAll(
+        "SELECT id, user_id, title, image_uri, extracted_text, notion_page_id, notion_page_title, status, created_at FROM scans WHERE user_id = ? ORDER BY created_at DESC",
+        [req.userId!]
+      );
       res.json({ scans: userScans });
     } catch (err) {
       console.error("Get scans error:", err);
@@ -158,15 +187,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/scans", authMiddleware, express.json(), (req: AuthRequest, res) => {
+  app.post("/api/scans", authMiddleware, largeBodyParser, async (req: AuthRequest, res) => {
     try {
-      const { id, imageUri, extractedText, status } = req.body;
+      const { id, imageUri, imageBase64, extractedText, title, status } = req.body;
       if (!id) return res.status(400).json({ error: "id is required" });
-      dbRun(
-        "INSERT INTO scans (id, user_id, image_uri, extracted_text, status) VALUES (?, ?, ?, ?, ?)",
-        [id, req.userId!, imageUri || null, extractedText || "", status || "processing"]
+      await dbRun(
+        "INSERT INTO scans (id, user_id, title, image_uri, image_base64, extracted_text, status) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        [id, req.userId!, title || null, imageUri || null, imageBase64 || null, extractedText || "", status || "processing"]
       );
-      const scan = dbGet("SELECT * FROM scans WHERE id = ?", [id]);
+      const scan = await dbGet("SELECT id, user_id, title, image_uri, extracted_text, status, created_at FROM scans WHERE id = ?", [id]);
       res.json({ scan });
     } catch (err) {
       console.error("Create scan error:", err);
@@ -174,17 +203,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.put("/api/scans/:id", authMiddleware, express.json(), (req: AuthRequest, res) => {
+  app.put("/api/scans/:id", authMiddleware, express.json(), async (req: AuthRequest, res) => {
     try {
       const id = String(req.params.id);
-      const updates = req.body;
-      const setClauses = Object.keys(updates).map(k => {
-        const col = k.replace(/([A-Z])/g, "_$1").toLowerCase();
-        return `${col} = ?`;
-      }).join(", ");
-      const values = [...Object.values(updates), id];
-      dbRun(`UPDATE scans SET ${setClauses} WHERE id = ?`, values as any[]);
-      const scan = dbGet("SELECT * FROM scans WHERE id = ?", [id]);
+      const { extractedText, title, notionPageId, notionPageTitle, status } = req.body;
+      await dbRun(
+        "UPDATE scans SET extracted_text = COALESCE(?, extracted_text), title = COALESCE(?, title), notion_page_id = COALESCE(?, notion_page_id), notion_page_title = COALESCE(?, notion_page_title), status = COALESCE(?, status) WHERE id = ? AND user_id = ?",
+        [extractedText ?? null, title ?? null, notionPageId ?? null, notionPageTitle ?? null, status ?? null, id, req.userId!]
+      );
+      const scan = await dbGet("SELECT * FROM scans WHERE id = ?", [id]);
       res.json({ scan });
     } catch (err) {
       console.error("Update scan error:", err);
@@ -192,12 +219,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/scans/:id", authMiddleware, (req: AuthRequest, res) => {
+  app.delete("/api/scans/:id", authMiddleware, async (req: AuthRequest, res) => {
     try {
-      dbRun("DELETE FROM scans WHERE id = ?", [String(req.params.id)]);
+      await dbRun("DELETE FROM scans WHERE id = ? AND user_id = ?", [String(req.params.id), req.userId!]);
       res.json({ success: true });
-    } catch (err) {
+    } catch {
       res.status(500).json({ error: "Failed to delete scan" });
+    }
+  });
+
+  // ── Serve scan image (used for Notion image blocks) ───────
+  app.get("/api/scans/:id/image", authMiddleware, async (req: AuthRequest, res) => {
+    try {
+      const row = await dbGet<{ image_base64: string | null }>(
+        "SELECT image_base64 FROM scans WHERE id = ? AND user_id = ?",
+        [String(req.params.id), req.userId!]
+      );
+      if (!row?.image_base64) return res.status(404).json({ error: "Image not found" });
+      const buffer = Buffer.from(row.image_base64, "base64");
+      res.set("Content-Type", "image/jpeg");
+      res.set("Cache-Control", "public, max-age=86400");
+      res.send(buffer);
+    } catch {
+      res.status(500).json({ error: "Failed to serve image" });
     }
   });
 
@@ -208,12 +252,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!image) return res.status(400).json({ error: "image is required" });
 
       // Determine which Groq key to use
-      const userRow = dbGet<{ groq_api_key: string | null }>("SELECT groq_api_key FROM users WHERE id = ?", [req.userId!]);
+      const userRow = await dbGet<{ groq_api_key: string | null }>("SELECT groq_api_key FROM users WHERE id = ?", [req.userId!]);
       let groqApiKey: string | null = userRow?.groq_api_key ?? null;
 
       if (!groqApiKey) {
-        // No personal key — check daily free quota
-        const dailyUsed = getDailyScanCount(req.userId!);
+        const dailyUsed = await getDailyScanCount(req.userId!);
         if (dailyUsed >= FREE_SCANS_PER_DAY) {
           return res.status(403).json({
             error: "SCAN_LIMIT_REACHED",
@@ -238,25 +281,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         throw err;
       }
 
-      res.json({ text: extractedText, success: true });
+      // Generate AI title (fast, uses 8b model — runs in parallel)
+      const title = await generateNoteTitle(groqApiKey, extractedText);
+
+      res.json({ text: extractedText, title, success: true });
     } catch (error) {
       console.error("OCR error:", error);
       res.status(500).json({ error: "Failed to process image" });
     }
   });
 
-
-  // ── Notion OAuth ────────────────────────────────────────────
-  /**
-   * Step 1: Redirect the user's browser to Notion's OAuth consent page.
-   * We encode the user's JWT in the `state` param so we know who to link the token to.
-   */
-  app.get("/api/notion/auth", (req, res) => {
-    // The browser opens this URL, so we can't use Bearer headers.
-    // The app passes the JWT as a ?token= query param.
+  // ── Notion OAuth ───────────────────────────────────────────
+  app.get("/api/notion/auth", async (req, res) => {
     const token = req.query.token as string | undefined;
     if (!token) return res.status(401).send("Missing token");
-
     let userId: string;
     try {
       const payload = jwt.verify(token, JWT_SECRET) as { userId: string };
@@ -264,38 +302,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch {
       return res.status(401).send("Invalid or expired token");
     }
-
     if (!NOTION_CLIENT_ID) {
-      return res.status(503).json({ error: "Notion OAuth is not configured on this server. Set NOTION_CLIENT_ID and NOTION_CLIENT_SECRET in .env" });
+      return res.status(503).json({ error: "Notion OAuth is not configured. Set NOTION_CLIENT_ID and NOTION_CLIENT_SECRET in .env" });
     }
     const apiUrl = process.env.EXPO_PUBLIC_API_URL || `http://localhost:${process.env.PORT || 3000}`;
     const redirectUri = `${apiUrl}/api/notion/callback`;
-    // Encode the userId in state so callback knows who to link to
     const state = jwt.sign({ userId }, JWT_SECRET, { expiresIn: "10m" });
-    const params = new URLSearchParams({
-      client_id: NOTION_CLIENT_ID,
-      response_type: "code",
-      owner: "user",
-      redirect_uri: redirectUri,
-      state,
-    });
+    const params = new URLSearchParams({ client_id: NOTION_CLIENT_ID, response_type: "code", owner: "user", redirect_uri: redirectUri, state });
     res.redirect(`https://api.notion.com/v1/oauth/authorize?${params.toString()}`);
   });
 
-  /**
-   * Step 2: Notion redirects here with ?code=... after user approves.
-   * Exchange code for access_token, save to DB, deep-link back into the app.
-   */
   app.get("/api/notion/callback", async (req, res) => {
     const { code, state, error } = req.query as Record<string, string>;
-
-    if (error) {
-      return res.redirect("notesync://notion-error?reason=access_denied");
-    }
-    if (!code || !state) {
-      return res.redirect("notesync://notion-error?reason=missing_params");
-    }
-
+    if (error) return res.redirect("notesync://notion-error?reason=access_denied");
+    if (!code || !state) return res.redirect("notesync://notion-error?reason=missing_params");
     let userId: string;
     try {
       const payload = jwt.verify(state, JWT_SECRET) as { userId: string };
@@ -303,36 +323,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch {
       return res.redirect("notesync://notion-error?reason=invalid_state");
     }
-
-    if (!NOTION_CLIENT_ID || !NOTION_CLIENT_SECRET) {
-      return res.redirect("notesync://notion-error?reason=server_config");
-    }
-
+    if (!NOTION_CLIENT_ID || !NOTION_CLIENT_SECRET) return res.redirect("notesync://notion-error?reason=server_config");
     try {
       const apiUrl = process.env.EXPO_PUBLIC_API_URL || `http://localhost:${process.env.PORT || 3000}`;
       const redirectUri = `${apiUrl}/api/notion/callback`;
-
       const credentials = Buffer.from(`${NOTION_CLIENT_ID}:${NOTION_CLIENT_SECRET}`).toString("base64");
       const tokenRes = await fetch("https://api.notion.com/v1/oauth/token", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Basic ${credentials}`,
-          "Notion-Version": "2022-06-28",
-        },
+        headers: { "Content-Type": "application/json", Authorization: `Basic ${credentials}`, "Notion-Version": "2022-06-28" },
         body: JSON.stringify({ grant_type: "authorization_code", code, redirect_uri: redirectUri }),
       });
-
-      if (!tokenRes.ok) {
-        const errText = await tokenRes.text().catch(() => tokenRes.statusText);
-        console.error("Notion token exchange failed:", errText);
-        return res.redirect("notesync://notion-error?reason=token_exchange");
-      }
-
+      if (!tokenRes.ok) return res.redirect("notesync://notion-error?reason=token_exchange");
       const tokenData = await tokenRes.json() as { access_token: string };
-      dbRun("UPDATE users SET notion_api_key = ? WHERE id = ?", [tokenData.access_token, userId]);
-
-      // Deep-link back into the app and trigger a user refresh
+      await dbRun("UPDATE users SET notion_api_key = ? WHERE id = ?", [tokenData.access_token, userId]);
       res.redirect("notesync://notion-connected");
     } catch (err) {
       console.error("Notion OAuth callback error:", err);
@@ -340,10 +343,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // ── Notion API ─────────────────────────────────────────────
-
+  // ── Notion Workspace API ───────────────────────────────────
   app.get("/api/notion/status", authMiddleware, async (req: AuthRequest, res) => {
-    const notion = getNotionClientForUser(req.userId!);
+    const notion = await getNotionClientForUser(req.userId!);
     if (!notion) return res.json({ connected: false });
     try {
       const user = await notion.users.me({});
@@ -354,7 +356,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.get("/api/notion/pages", authMiddleware, async (req: AuthRequest, res) => {
-    const notion = getNotionClientForUser(req.userId!);
+    const notion = await getNotionClientForUser(req.userId!);
     if (!notion) return res.status(401).json({ error: "Notion not configured" });
     try {
       const query = (req.query.q as string) || "";
@@ -376,12 +378,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.post("/api/notion/upload", authMiddleware, express.json(), async (req: AuthRequest, res) => {
-    const notion = getNotionClientForUser(req.userId!);
+    const notion = await getNotionClientForUser(req.userId!);
     if (!notion) return res.status(401).json({ error: "Notion not configured" });
     try {
-      const { pageId, content } = req.body;
+      const { pageId, content, scanId } = req.body;
       if (!pageId || !content) return res.status(400).json({ error: "pageId and content are required" });
-      const blocks = markdownToNotionBlocks(content);
+
+      const blocks: any[] = [];
+
+      // If scanId provided, prepend the original scan image as a Notion image block
+      if (scanId) {
+        const apiUrl = process.env.EXPO_PUBLIC_API_URL || `http://localhost:${process.env.PORT || 3000}`;
+        const scanRow = await dbGet<{ image_base64: string | null }>(
+          "SELECT image_base64 FROM scans WHERE id = ? AND user_id = ?",
+          [scanId, req.userId!]
+        );
+        if (scanRow?.image_base64) {
+          // We serve the image from our own API, Notion fetches it as an external image
+          const imageUrl = `${apiUrl}/api/scans/${scanId}/image`;
+          blocks.push({
+            object: "block",
+            type: "image",
+            image: { type: "external", external: { url: imageUrl } },
+          });
+        }
+      }
+
+      blocks.push(...markdownToNotionBlocks(content));
+
       for (let i = 0; i < blocks.length; i += 100) {
         await notion.blocks.children.append({ block_id: pageId, children: blocks.slice(i, i + 100) });
       }

@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export interface ScanRecord {
   id: string;
+  title?: string;
   imageUri: string;
   extractedText: string;
   notionPageId?: string;

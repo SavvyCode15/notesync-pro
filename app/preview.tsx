@@ -31,7 +31,9 @@ export default function PreviewScreen() {
   const bottomInset = Platform.OS === 'web' ? 34 : insets.bottom;
 
   const [imageUri, setImageUri] = useState<string>('');
+  const [imageBase64, setImageBase64] = useState<string>('');
   const [extractedText, setExtractedText] = useState('');
+  const [noteTitle, setNoteTitle] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [scanId, setScanId] = useState('');
@@ -69,8 +71,8 @@ export default function PreviewScreen() {
 
     setImageUri(pending.imageUri);
     setScanId(pending.scanId);
-
     if (pending.imageBase64) {
+      setImageBase64(pending.imageBase64);
       processImage(pending.imageBase64, pending.scanId);
     }
   }
@@ -78,51 +80,53 @@ export default function PreviewScreen() {
   async function processImage(base64: string, id: string) {
     setIsProcessing(true);
     setError(null);
-
     try {
-      if (!user?.groqConnected) {
-        Alert.alert(
-          'Groq API Key Required',
-          'Please add your Groq API key in Settings to scan notes.',
-          [
-            { text: 'Go to Settings', onPress: () => router.push('/settings') },
-            { text: 'Cancel', style: 'cancel' },
-          ]
-        );
-        setIsProcessing(false);
-        return;
-      }
-
       const baseUrl = getApiUrl();
-      const url = new URL('/api/scan', baseUrl);
-
-      const response = await fetch(url.toString(), {
+      const response = await fetch(new URL('/api/scan', baseUrl).toString(), {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ image: base64 }),
       });
 
       if (!response.ok) {
         const errData = await response.json().catch(() => ({}));
+        if (errData.error === 'SCAN_LIMIT_REACHED') {
+          Alert.alert(
+            'Daily Limit Reached',
+            errData.message || 'You have used all free scans for today.',
+            [
+              { text: 'Add My Own Key', onPress: () => router.push('/settings') },
+              { text: 'OK', style: 'cancel' },
+            ]
+          );
+          setIsProcessing(false);
+          return;
+        }
         throw new Error(errData.error || 'Failed to process image');
       }
 
       const data = await response.json();
       setExtractedText(data.text);
+      if (data.title) setNoteTitle(data.title);
 
-      await updateScan(id, {
-        extractedText: data.text,
-        status: 'extracted',
+      // Save scan to DB including the base64 image for Notion upload
+      await fetch(new URL('/api/scans', baseUrl).toString(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          id,
+          imageUri,
+          imageBase64: base64,
+          title: data.title || 'Untitled Note',
+          extractedText: data.text,
+          status: 'extracted',
+        }),
       });
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Something went wrong';
       setError(msg);
-      await updateScan(id, { status: 'failed' });
     } finally {
       setIsProcessing(false);
     }
@@ -133,7 +137,7 @@ export default function PreviewScreen() {
       Alert.alert('No Content', 'There is no text to send to Notion.');
       return;
     }
-    setPendingUpload({ scanId, extractedText });
+    setPendingUpload({ scanId, extractedText, title: noteTitle });
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     router.push('/select-page');
   }
