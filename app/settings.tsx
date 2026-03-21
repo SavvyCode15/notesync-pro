@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
+import * as ExpoLinking from 'expo-linking';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import Colors from '@/constants/colors';
 import { getApiUrl } from '@/lib/query-client';
@@ -106,7 +107,10 @@ export default function SettingsScreen() {
   async function handleConnectWithNotion() {
     if (!token) return;
     const apiUrl = getApiUrl();
-    const authUrl = `${apiUrl}/api/notion/auth?token=${token}`;
+    const returnUrl = ExpoLinking.createURL('notion-connected');
+
+    // We pass both the auth JWT and the requested return deep link
+    const authUrl = `${apiUrl}/api/notion/auth?token=${token}&returnUrl=${encodeURIComponent(returnUrl)}`;
 
     // Use WebBrowser instead of Linking to force an in-app browser.
     // This prevents the native Notion app from intercepting the URL and breaking the flow.
