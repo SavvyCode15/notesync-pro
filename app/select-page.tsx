@@ -105,6 +105,7 @@ export default function SelectPageScreen() {
         body: JSON.stringify({
           pageId: page.id,
           content: uploadData.extractedText,
+          scanId: uploadData.scanId,
         }),
       });
 

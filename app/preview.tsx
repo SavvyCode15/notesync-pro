@@ -109,6 +109,9 @@ export default function PreviewScreen() {
       setExtractedText(data.text);
       if (data.title) setNoteTitle(data.title);
 
+      // Update local storage so the Home Screen list shows the actual title and preview instead of "Processing..."
+      await updateScan(id, { title: data.title || 'Untitled Note', extractedText: data.text, status: 'extracted' });
+
       // Save scan to DB including the base64 image for Notion upload
       await fetch(new URL('/api/scans', baseUrl).toString(), {
         method: 'POST',
