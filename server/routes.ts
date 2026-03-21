@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "node:http";
 import { Client } from "@notionhq/client";
 import express from "express";
+import jwt from "jsonwebtoken";
 import { dbGet, dbAll, dbRun } from "./db";
 import {
   authMiddleware,
@@ -11,6 +12,15 @@ import {
   getNotionKeyForUser,
   type AuthRequest,
 } from "./auth";
+
+// ============================================================
+// Config
+// ============================================================
+const FREE_SCANS_PER_DAY = 5;
+const SERVER_GROQ_KEY = process.env.GROQ_API_KEY ?? null;
+const NOTION_CLIENT_ID = process.env.NOTION_CLIENT_ID ?? null;
+const NOTION_CLIENT_SECRET = process.env.NOTION_CLIENT_SECRET ?? null;
+const JWT_SECRET = process.env.JWT_SECRET || "notesync-dev-secret-change-in-production";
 
 // ============================================================
 // Groq Vision OCR (free tier: 14,400 req/day)
@@ -67,6 +77,15 @@ function getNotionClientForUser(userId: string): Client | null {
   return new Client({ auth: key });
 }
 
+/** Count how many scans this user has submitted today (UTC). */
+function getDailyScanCount(userId: string): number {
+  const row = dbGet<{ c: number }>(
+    "SELECT COUNT(*) as c FROM scans WHERE user_id = ? AND date(created_at, 'unixepoch') = date('now')",
+    [userId]
+  );
+  return row?.c ?? 0;
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
   const largeBodyParser = express.json({ limit: "50mb" });
 
@@ -119,7 +138,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // ── Scan history ───────────────────────────────────────────
+  // ── Scan usage (daily free tier) ─────────────────────────
+  app.get("/api/user/scan-usage", authMiddleware, (req: AuthRequest, res) => {
+    try {
+      const used = getDailyScanCount(req.userId!);
+      res.json({ used, limit: FREE_SCANS_PER_DAY, remaining: Math.max(0, FREE_SCANS_PER_DAY - used) });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to fetch scan usage" });
+    }
+  });
+
   app.get("/api/scans", authMiddleware, (req: AuthRequest, res) => {
     try {
       const userScans = dbAll("SELECT * FROM scans WHERE user_id = ? ORDER BY created_at DESC", [req.userId!]);
@@ -179,17 +207,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { image } = req.body;
       if (!image) return res.status(400).json({ error: "image is required" });
 
-      // Look up the user's personal Groq key from the DB
+      // Determine which Groq key to use
       const userRow = dbGet<{ groq_api_key: string | null }>("SELECT groq_api_key FROM users WHERE id = ?", [req.userId!]);
-      if (!userRow?.groq_api_key) {
-        return res.status(403).json({
-          error: "Groq API key not configured. Please add your Groq API key in the app Settings."
-        });
+      let groqApiKey: string | null = userRow?.groq_api_key ?? null;
+
+      if (!groqApiKey) {
+        // No personal key — check daily free quota
+        const dailyUsed = getDailyScanCount(req.userId!);
+        if (dailyUsed >= FREE_SCANS_PER_DAY) {
+          return res.status(403).json({
+            error: "SCAN_LIMIT_REACHED",
+            message: `You've used all ${FREE_SCANS_PER_DAY} free scans for today. Add your own Groq API key in Settings for unlimited access.`,
+            used: dailyUsed,
+            limit: FREE_SCANS_PER_DAY,
+          });
+        }
+        if (!SERVER_GROQ_KEY) {
+          return res.status(403).json({ error: "No Groq API key available. Please add your own key in Settings." });
+        }
+        groqApiKey = SERVER_GROQ_KEY;
       }
 
       let extractedText: string;
       try {
-        extractedText = await callGroqVision(userRow.groq_api_key, image);
+        extractedText = await callGroqVision(groqApiKey, image);
       } catch (err: any) {
         if (err.status === 429) {
           return res.status(429).json({ error: "OCR rate limit reached. Please wait a minute and try again." });
@@ -204,7 +245,103 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+
+  // ── Notion OAuth ────────────────────────────────────────────
+  /**
+   * Step 1: Redirect the user's browser to Notion's OAuth consent page.
+   * We encode the user's JWT in the `state` param so we know who to link the token to.
+   */
+  app.get("/api/notion/auth", (req, res) => {
+    // The browser opens this URL, so we can't use Bearer headers.
+    // The app passes the JWT as a ?token= query param.
+    const token = req.query.token as string | undefined;
+    if (!token) return res.status(401).send("Missing token");
+
+    let userId: string;
+    try {
+      const payload = jwt.verify(token, JWT_SECRET) as { userId: string };
+      userId = payload.userId;
+    } catch {
+      return res.status(401).send("Invalid or expired token");
+    }
+
+    if (!NOTION_CLIENT_ID) {
+      return res.status(503).json({ error: "Notion OAuth is not configured on this server. Set NOTION_CLIENT_ID and NOTION_CLIENT_SECRET in .env" });
+    }
+    const apiUrl = process.env.EXPO_PUBLIC_API_URL || `http://localhost:${process.env.PORT || 3000}`;
+    const redirectUri = `${apiUrl}/api/notion/callback`;
+    // Encode the userId in state so callback knows who to link to
+    const state = jwt.sign({ userId }, JWT_SECRET, { expiresIn: "10m" });
+    const params = new URLSearchParams({
+      client_id: NOTION_CLIENT_ID,
+      response_type: "code",
+      owner: "user",
+      redirect_uri: redirectUri,
+      state,
+    });
+    res.redirect(`https://api.notion.com/v1/oauth/authorize?${params.toString()}`);
+  });
+
+  /**
+   * Step 2: Notion redirects here with ?code=... after user approves.
+   * Exchange code for access_token, save to DB, deep-link back into the app.
+   */
+  app.get("/api/notion/callback", async (req, res) => {
+    const { code, state, error } = req.query as Record<string, string>;
+
+    if (error) {
+      return res.redirect("notesync://notion-error?reason=access_denied");
+    }
+    if (!code || !state) {
+      return res.redirect("notesync://notion-error?reason=missing_params");
+    }
+
+    let userId: string;
+    try {
+      const payload = jwt.verify(state, JWT_SECRET) as { userId: string };
+      userId = payload.userId;
+    } catch {
+      return res.redirect("notesync://notion-error?reason=invalid_state");
+    }
+
+    if (!NOTION_CLIENT_ID || !NOTION_CLIENT_SECRET) {
+      return res.redirect("notesync://notion-error?reason=server_config");
+    }
+
+    try {
+      const apiUrl = process.env.EXPO_PUBLIC_API_URL || `http://localhost:${process.env.PORT || 3000}`;
+      const redirectUri = `${apiUrl}/api/notion/callback`;
+
+      const credentials = Buffer.from(`${NOTION_CLIENT_ID}:${NOTION_CLIENT_SECRET}`).toString("base64");
+      const tokenRes = await fetch("https://api.notion.com/v1/oauth/token", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Basic ${credentials}`,
+          "Notion-Version": "2022-06-28",
+        },
+        body: JSON.stringify({ grant_type: "authorization_code", code, redirect_uri: redirectUri }),
+      });
+
+      if (!tokenRes.ok) {
+        const errText = await tokenRes.text().catch(() => tokenRes.statusText);
+        console.error("Notion token exchange failed:", errText);
+        return res.redirect("notesync://notion-error?reason=token_exchange");
+      }
+
+      const tokenData = await tokenRes.json() as { access_token: string };
+      dbRun("UPDATE users SET notion_api_key = ? WHERE id = ?", [tokenData.access_token, userId]);
+
+      // Deep-link back into the app and trigger a user refresh
+      res.redirect("notesync://notion-connected");
+    } catch (err) {
+      console.error("Notion OAuth callback error:", err);
+      res.redirect("notesync://notion-error?reason=server_error");
+    }
+  });
+
   // ── Notion API ─────────────────────────────────────────────
+
   app.get("/api/notion/status", authMiddleware, async (req: AuthRequest, res) => {
     const notion = getNotionClientForUser(req.userId!);
     if (!notion) return res.json({ connected: false });

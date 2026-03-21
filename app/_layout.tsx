@@ -2,6 +2,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Stack, router } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect } from "react";
+import { Linking } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
@@ -14,7 +15,7 @@ import { AuthProvider, useAuth } from '@/lib/auth-context';
 SplashScreen.preventAutoHideAsync();
 
 function RootNavigator() {
-  const { user, isLoading } = useAuth();
+  const { user, isLoading, refreshUser } = useAuth();
 
   useEffect(() => {
     if (isLoading) return;
@@ -25,6 +26,17 @@ function RootNavigator() {
       router.replace('/');
     }
   }, [user, isLoading]);
+
+  // Handle deep links from Notion OAuth callback
+  useEffect(() => {
+    const handler = ({ url }: { url: string }) => {
+      if (url.startsWith('notesync://notion-connected')) {
+        refreshUser(); // refresh Notion status instantly
+      }
+    };
+    const sub = Linking.addEventListener('url', handler);
+    return () => sub.remove();
+  }, [refreshUser]);
 
   return (
     <Stack

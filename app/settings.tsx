@@ -27,7 +27,7 @@ export default function SettingsScreen() {
 
   const [notionStatus, setNotionStatus] = useState<'loading' | 'connected' | 'disconnected'>('loading');
   const [notionUser, setNotionUser] = useState<string>('');
-  const [showKeyInput, setShowKeyInput] = useState(false);
+  const [showManualKey, setShowManualKey] = useState(false);
   const [notionKey, setNotionKey] = useState('');
   const [savingKey, setSavingKey] = useState(false);
 
@@ -36,9 +36,27 @@ export default function SettingsScreen() {
   const [savingGroqKey, setSavingGroqKey] = useState(false);
   const groqConnected = user?.groqConnected ?? false;
 
+  const [scanUsage, setScanUsage] = useState<{ used: number; limit: number } | null>(null);
+
   useEffect(() => {
-    if (token) checkNotionStatus();
+    if (token) {
+      checkNotionStatus();
+      fetchScanUsage();
+    }
   }, [token]);
+
+  async function fetchScanUsage() {
+    if (!token) return;
+    try {
+      const resp = await fetch(new URL('/api/user/scan-usage', getApiUrl()).toString(), {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        setScanUsage({ used: data.used, limit: data.limit });
+      }
+    } catch { }
+  }
 
   async function checkNotionStatus() {
     if (!token) return;
@@ -67,15 +85,14 @@ export default function SettingsScreen() {
     }
     setSavingKey(true);
     try {
-      const baseUrl = getApiUrl();
-      const resp = await fetch(new URL('/api/user/notion-key', baseUrl).toString(), {
+      const resp = await fetch(new URL('/api/user/notion-key', getApiUrl()).toString(), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ notionApiKey: notionKey.trim() }),
       });
       if (!resp.ok) throw new Error('Failed');
       setNotionKey('');
-      setShowKeyInput(false);
+      setShowManualKey(false);
       await refreshUser();
       await checkNotionStatus();
     } catch {
@@ -83,6 +100,17 @@ export default function SettingsScreen() {
     } finally {
       setSavingKey(false);
     }
+  }
+
+  function handleConnectWithNotion() {
+    if (!token) return;
+    // Open the backend OAuth endpoint in the device browser.
+    // The backend redirects to Notion, user approves, backend saves token, deep-links back.
+    const apiUrl = getApiUrl();
+    const authUrl = `${apiUrl}/api/notion/auth`;
+    // We pass the JWT as a query param so the (non-authenticated) browser session can start the flow.
+    // The server signs state internally using the userId from the middleware.
+    Linking.openURL(`${authUrl}?token=${token}`);
   }
 
   async function handleDisconnectNotion() {
@@ -194,6 +222,32 @@ export default function SettingsScreen() {
           </Pressable>
         </Animated.View>
 
+        {/* Scan Usage Card (free tier) */}
+        {scanUsage !== null && (
+          <Animated.View entering={FadeInDown.delay(130).duration(400)} style={styles.usageCard}>
+            <View style={styles.usageHeader}>
+              <Ionicons name="scan-outline" size={18} color={scanUsage.used >= scanUsage.limit ? Colors.danger : Colors.accent} />
+              <Text style={styles.usageTitle}>Free Daily Scans</Text>
+              <Text style={[styles.usageCount, scanUsage.used >= scanUsage.limit && { color: Colors.danger }]}>
+                {scanUsage.used} / {scanUsage.limit}
+              </Text>
+            </View>
+            <View style={styles.usageBarBg}>
+              <View
+                style={[styles.usageBarFill, {
+                  width: `${Math.min(1, scanUsage.used / scanUsage.limit) * 100}%` as any,
+                  backgroundColor: scanUsage.used >= scanUsage.limit ? Colors.danger : Colors.accent,
+                }]}
+              />
+            </View>
+            <Text style={styles.usageHint}>
+              {scanUsage.used >= scanUsage.limit
+                ? `All ${scanUsage.limit} free scans used today. Add your Groq key below for unlimited access.`
+                : `${scanUsage.limit - scanUsage.used} free scan${scanUsage.limit - scanUsage.used !== 1 ? 's' : ''} remaining today`}
+            </Text>
+          </Animated.View>
+        )}
+
         {/* Notion connection card */}
         <Animated.View entering={FadeInDown.delay(160).duration(400)} style={styles.statusCard}>
           <View style={styles.statusHeader}>
@@ -231,16 +285,22 @@ export default function SettingsScreen() {
             </View>
           ) : (
             <>
-              {!showKeyInput ? (
-                <Pressable style={({ pressed }) => [styles.connectButton, pressed && { opacity: 0.8 }]} onPress={() => setShowKeyInput(true)}>
-                  <Feather name="link" size={16} color={Colors.accent} />
-                  <Text style={styles.connectButtonText}>Connect Notion</Text>
+              {/* Primary: OAuth button */}
+              <Pressable style={({ pressed }) => [styles.connectButton, pressed && { opacity: 0.8 }]} onPress={handleConnectWithNotion}>
+                <Feather name="link" size={16} color={Colors.accent} />
+                <Text style={styles.connectButtonText}>Connect with Notion</Text>
+              </Pressable>
+
+              {/* Fallback: manual key paste */}
+              {!showManualKey ? (
+                <Pressable onPress={() => setShowManualKey(true)} style={styles.advancedToggle}>
+                  <Text style={styles.advancedToggleText}>Advanced: use API key instead</Text>
                 </Pressable>
               ) : (
                 <View style={styles.keyInputContainer}>
                   <TextInput
                     style={styles.keyInput}
-                    placeholder="Paste your integration token..."
+                    placeholder="Paste your Notion integration token..."
                     placeholderTextColor={Colors.textTertiary}
                     value={notionKey}
                     onChangeText={setNotionKey}
@@ -249,7 +309,7 @@ export default function SettingsScreen() {
                     selectionColor={Colors.accent}
                   />
                   <View style={styles.keyInputActions}>
-                    <Pressable style={({ pressed }) => [styles.keyActionButton, pressed && { opacity: 0.7 }]} onPress={() => { setShowKeyInput(false); setNotionKey(''); }}>
+                    <Pressable style={({ pressed }) => [styles.keyActionButton, pressed && { opacity: 0.7 }]} onPress={() => { setShowManualKey(false); setNotionKey(''); }}>
                       <Text style={styles.keyActionCancel}>Cancel</Text>
                     </Pressable>
                     <Pressable style={({ pressed }) => [styles.keyActionButton, styles.keyActionSave, pressed && { opacity: 0.8 }]} onPress={handleSaveNotionKey} disabled={savingKey}>
@@ -320,7 +380,7 @@ export default function SettingsScreen() {
         </Animated.View>
 
         {/* Setup guide (shown when not connected) */}
-        {notionStatus !== 'connected' && !showKeyInput && (
+        {notionStatus !== 'connected' && !showManualKey && (
           <>
             <Animated.View entering={FadeInDown.delay(240).duration(400)}>
               <Text style={styles.sectionTitle}>Setup Guide</Text>
@@ -371,6 +431,23 @@ const styles = StyleSheet.create({
   accountName: { fontFamily: 'Inter_600SemiBold', fontSize: 15, color: Colors.text },
   accountEmail: { fontFamily: 'Inter_400Regular', fontSize: 13, color: Colors.textSecondary },
   logoutButton: { padding: 8 },
+  usageCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: 18,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    marginBottom: 16,
+    gap: 10,
+  },
+  usageHeader: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  usageTitle: { fontFamily: 'Inter_500Medium', fontSize: 14, color: Colors.textSecondary, flex: 1 },
+  usageCount: { fontFamily: 'Inter_700Bold', fontSize: 14, color: Colors.accent },
+  usageBarBg: { height: 6, borderRadius: 3, backgroundColor: Colors.surfaceElevated, overflow: 'hidden' },
+  usageBarFill: { height: '100%', borderRadius: 3 },
+  usageHint: { fontFamily: 'Inter_400Regular', fontSize: 12, color: Colors.textTertiary },
+  advancedToggle: { alignSelf: 'center', marginTop: 10 },
+  advancedToggleText: { fontFamily: 'Inter_400Regular', fontSize: 12, color: Colors.textTertiary, textDecorationLine: 'underline' },
   statusCard: { backgroundColor: Colors.surface, borderRadius: 18, padding: 18, borderWidth: 1, borderColor: Colors.border, marginBottom: 24 },
   statusHeader: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   notionIconWrap: { width: 44, height: 44, borderRadius: 12, backgroundColor: Colors.accent + '15', alignItems: 'center', justifyContent: 'center' },
