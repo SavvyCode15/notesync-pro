@@ -58,6 +58,7 @@ export default function PreviewScreen() {
       if (scan) {
         setImageUri(scan.imageUri);
         setExtractedText(scan.extractedText);
+        setNoteTitle(scan.title || 'Untitled Note');
         setScanId(scan.id);
       }
       return;
@@ -243,7 +244,7 @@ export default function PreviewScreen() {
           ) : null}
         </ScrollView>
 
-        {!isProcessing && extractedText && !isViewOnly ? (
+        {!isProcessing && extractedText ? (
           <Animated.View
             entering={FadeInDown.delay(300).duration(300)}
             style={[styles.bottomBar, { paddingBottom: 16 + bottomInset }]}
