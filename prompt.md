@@ -79,15 +79,17 @@ Only 4 environment variables are used across the whole app. **DO NOT introduce n
 
 ## 6. How to Continue Development (Instructions for AI)
 If you are an AI reading this file to continue work:
-1. **DO NOT try to add PostgreSQL, Prisma, or Drizzle ORM.** We deliberately migrated away from them to native `node:sqlite` for simplicity.
-2. **DO NOT try to hardcode API Keys.** Groq and Notion keys must be fetched from the `users` database table corresponding to the active `req.userId`.
-3. **File Locations:**
+1. **READ THE CHANGELOG:** Immediately read `AI_CHANGELOG.md` to understand the current exact sprint, open bugs, and what the last AI was working on before you took over.
+2. **DO NOT try to add PostgreSQL, Prisma, or Drizzle ORM.** We deliberately migrated away from them to native `node:sqlite` for simplicity.
+3. **DO NOT try to hardcode API Keys.** Groq and Notion keys must be fetched from the `users` database table corresponding to the active `req.userId`.
+4. **File Locations:**
    - Put all new API endpoints inside `server/routes.ts`.
    - Put database queries inside `server/db.ts` using the simple `dbGet()`, `dbRun()`, `dbAll()` wrapper functions.
    - UI changes go in the `app/` folder (Expo Router).
    - Global state/API fetchers go in `lib/`.
-4. **Testing local changes:** You must kill any running `npm run server:dev` on port 3000 and restart it to see backend changes, as it runs via `tsx` but without the `--watch` flag currently.
-5. **Always update this `prompt.md` file if you make a fundamental architectural change or add a new core flow.**
+5. **Testing local changes:** You must kill any running `npm run server:dev` on port 3000 and restart it to see backend changes, as it runs via `tsx` but without the `--watch` flag currently.
+6. **Always update `prompt.md`** if you make a fundamental architectural change or add a new core flow.
+7. **Always update `AI_CHANGELOG.md`** at the end of your session before handing back control, summarizing exactly what you did, what files were touched, and what the next step is.
 
 <!-- 
 ======================================================================
