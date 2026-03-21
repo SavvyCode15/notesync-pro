@@ -392,7 +392,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // If scanId provided, prepend the original scan image as a Notion image block
       if (scanId) {
-        const apiUrl = process.env.EXPO_PUBLIC_API_URL || `http://localhost:${process.env.PORT || 3000}`;
+        const protocol = req.headers["x-forwarded-proto"] || req.protocol;
+        const host = req.headers["x-forwarded-host"] || req.get("host");
+        const apiUrl = `${protocol}://${host}`;
         const scanRow = await dbGet<{ image_base64: string | null }>(
           "SELECT image_base64 FROM scans WHERE id = ? AND user_id = ?",
           [scanId, req.userId!]
