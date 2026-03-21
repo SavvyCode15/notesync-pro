@@ -7,6 +7,25 @@
 
 ---
 
+## [2026-03-21] Session: Turso DB Migration & AI Features
+
+**Completed Work:**
+- **Database Architecture Re-write:** Migrated from `node:sqlite` to `@libsql/client` (Turso). DB is fully async now. Local dev uses file URL, Prod will use `TURSO_DATABASE_URL`.
+- **AI-Generated Note Titles:** Added `generateNoteTitle` using `llama-3.1-8b-instant`. Returns smart 4-6 word titles along with the OCR extracted text.
+- **Scan Image to Notion:** Saved `imageBase64` into DB during scan. Added endpoint `GET /api/scans/:id/image`. When sending to Notion, an external image block linking to that endpoint is prepended to the page content.
+- Updated `app/index.tsx` home screen to show AI note titles instead of "Processing...".
+
+**Files Changed:**
+- `server/db.ts`, `server/auth.ts`, `server/routes.ts`, `server/index.ts`
+- `app/preview.tsx`, `app/index.tsx`
+- `lib/storage.ts`, `lib/pending-scan.ts`
+
+**Next Steps Handover:**
+- The codebase is ready to be hosted on Render + Turso.
+- Next step: Create a free Turso DB, attach `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN` in Render, and deploy the server!
+
+---
+
 ## [2026-03-21] Session: Environment Sync & Migration to SQLite
 
 **Completed Work:**
