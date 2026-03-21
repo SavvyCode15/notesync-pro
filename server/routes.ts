@@ -305,7 +305,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (!NOTION_CLIENT_ID) {
       return res.status(503).json({ error: "Notion OAuth is not configured. Set NOTION_CLIENT_ID and NOTION_CLIENT_SECRET in .env" });
     }
-    const apiUrl = process.env.EXPO_PUBLIC_API_URL || `http://localhost:${process.env.PORT || 3000}`;
+    const protocol = req.headers["x-forwarded-proto"] || req.protocol;
+    const host = req.headers["x-forwarded-host"] || req.get("host");
+    const apiUrl = `${protocol}://${host}`;
     const redirectUri = `${apiUrl}/api/notion/callback`;
     const state = jwt.sign({ userId }, JWT_SECRET, { expiresIn: "10m" });
     const params = new URLSearchParams({ client_id: NOTION_CLIENT_ID, response_type: "code", owner: "user", redirect_uri: redirectUri, state });
@@ -325,7 +327,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
     if (!NOTION_CLIENT_ID || !NOTION_CLIENT_SECRET) return res.redirect("notesync://notion-error?reason=server_config");
     try {
-      const apiUrl = process.env.EXPO_PUBLIC_API_URL || `http://localhost:${process.env.PORT || 3000}`;
+      const protocol = req.headers["x-forwarded-proto"] || req.protocol;
+      const host = req.headers["x-forwarded-host"] || req.get("host");
+      const apiUrl = `${protocol}://${host}`;
       const redirectUri = `${apiUrl}/api/notion/callback`;
       const credentials = Buffer.from(`${NOTION_CLIENT_ID}:${NOTION_CLIENT_SECRET}`).toString("base64");
       const tokenRes = await fetch("https://api.notion.com/v1/oauth/token", {
