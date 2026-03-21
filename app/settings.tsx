@@ -14,6 +14,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
+import * as WebBrowser from 'expo-web-browser';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import Colors from '@/constants/colors';
 import { getApiUrl } from '@/lib/query-client';
@@ -102,15 +103,14 @@ export default function SettingsScreen() {
     }
   }
 
-  function handleConnectWithNotion() {
+  async function handleConnectWithNotion() {
     if (!token) return;
-    // Open the backend OAuth endpoint in the device browser.
-    // The backend redirects to Notion, user approves, backend saves token, deep-links back.
     const apiUrl = getApiUrl();
-    const authUrl = `${apiUrl}/api/notion/auth`;
-    // We pass the JWT as a query param so the (non-authenticated) browser session can start the flow.
-    // The server signs state internally using the userId from the middleware.
-    Linking.openURL(`${authUrl}?token=${token}`);
+    const authUrl = `${apiUrl}/api/notion/auth?token=${token}`;
+
+    // Use WebBrowser instead of Linking to force an in-app browser.
+    // This prevents the native Notion app from intercepting the URL and breaking the flow.
+    await WebBrowser.openBrowserAsync(authUrl);
   }
 
   async function handleDisconnectNotion() {
