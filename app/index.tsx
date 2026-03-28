@@ -17,8 +17,10 @@ import * as Haptics from 'expo-haptics';
 import * as Crypto from 'expo-crypto';
 import Animated, { FadeInDown, FadeIn } from 'react-native-reanimated';
 import Colors from '@/constants/colors';
-import { getScans, saveScan, deleteScan, type ScanRecord } from '@/lib/storage';
+import { getScans, saveScan, deleteScan, updateScan, type ScanRecord } from '@/lib/storage';
 import { setPendingScan } from '@/lib/pending-scan';
+import { useAuth } from '@/lib/auth-context';
+import { getApiUrl } from '@/lib/query-client';
 
 function ScanCardItem({ item, onDelete }: { item: ScanRecord; onDelete: (id: string) => void }) {
   const date = new Date(item.createdAt);
@@ -79,6 +81,7 @@ function ScanCardItem({ item, onDelete }: { item: ScanRecord; onDelete: (id: str
 
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
+  const { token } = useAuth();
   const [scans, setScans] = useState<ScanRecord[]>([]);
   const [showOptions, setShowOptions] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -93,8 +96,56 @@ export default function HomeScreen() {
   );
 
   async function loadScans() {
-    const data = await getScans();
-    setScans(data);
+    // Show local cache immediately for instant UI
+    const localData = await getScans();
+    setScans(localData);
+
+    // Then sync from server so cross-device history is always fresh
+    if (!token) return;
+    try {
+      const baseUrl = getApiUrl();
+      const resp = await fetch(new URL('/api/scans', baseUrl).toString(), {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!resp.ok) return;
+      const { scans: serverScans } = await resp.json();
+      if (!Array.isArray(serverScans) || serverScans.length === 0) return;
+
+      // Map server snake_case → local camelCase ScanRecord
+      const localIds = new Set(localData.map((s: ScanRecord) => s.id));
+      for (const s of serverScans) {
+        const record: ScanRecord = {
+          id: s.id,
+          title: s.title || undefined,
+          imageUri: s.image_uri || '',
+          extractedText: s.extracted_text || '',
+          notionPageId: s.notion_page_id || undefined,
+          notionPageTitle: s.notion_page_title || undefined,
+          createdAt: s.created_at
+            ? new Date(s.created_at * 1000).toISOString()
+            : new Date().toISOString(),
+          status: s.status || 'extracted',
+        };
+        if (localIds.has(record.id)) {
+          // Update status/title in case it changed on another device
+          await updateScan(record.id, {
+            status: record.status,
+            notionPageId: record.notionPageId,
+            notionPageTitle: record.notionPageTitle,
+            title: record.title,
+          });
+        } else {
+          // New record from another device — save it locally
+          await saveScan(record);
+        }
+      }
+
+      // Re-read local storage after merge so the UI is fully up to date
+      const merged = await getScans();
+      setScans(merged);
+    } catch {
+      // Network unavailable — local cache is already shown, no action needed
+    }
   }
 
   async function handleDelete(id: string) {
@@ -127,6 +178,8 @@ export default function HomeScreen() {
           mediaTypes: ['images'],
           quality: 0.8,
           base64: true,
+          allowsMultipleSelection: true,
+          selectionLimit: 10,
         });
 
       if (result.canceled || !result.assets?.[0]) {
@@ -134,12 +187,13 @@ export default function HomeScreen() {
         return;
       }
 
-      const asset = result.assets[0];
+      const primaryAsset = result.assets[0];
+      const extraAssets = result.assets.slice(1);
       const scanId = Crypto.randomUUID();
 
       const newScan: ScanRecord = {
         id: scanId,
-        imageUri: asset.uri,
+        imageUri: primaryAsset.uri,
         extractedText: '',
         createdAt: new Date().toISOString(),
         status: 'processing',
@@ -147,9 +201,12 @@ export default function HomeScreen() {
       await saveScan(newScan);
 
       setPendingScan({
-        imageUri: asset.uri,
-        imageBase64: asset.base64 || '',
+        imageUri: primaryAsset.uri,
+        imageBase64: primaryAsset.base64 || '',
         scanId,
+        // Extra pages are passed through as additional pages for multi-page OCR
+        diagramUris: extraAssets.map(a => a.uri),
+        diagramBase64s: extraAssets.map(a => a.base64 || '').filter(Boolean),
       });
 
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);

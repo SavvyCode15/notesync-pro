@@ -7,6 +7,7 @@ export interface ScanRecord {
   extractedText: string;
   notionPageId?: string;
   notionPageTitle?: string;
+  diagramUris?: string[];
   createdAt: string;
   status: 'processing' | 'extracted' | 'uploaded' | 'failed';
 }

@@ -104,8 +104,10 @@ export default function SelectPageScreen() {
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({
           pageId: page.id,
+          pageTitle: page.title,
           content: uploadData.extractedText,
           scanId: uploadData.scanId,
+          diagramBase64s: uploadData.diagramBase64s,
         }),
       });
 

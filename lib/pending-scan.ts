@@ -2,12 +2,16 @@ let pendingScanData: {
   imageUri: string;
   imageBase64: string;
   scanId: string;
+  diagramUris?: string[];
+  diagramBase64s?: string[];
 } | null = null;
 
 let pendingUploadData: {
   scanId: string;
   extractedText: string;
   title?: string;
+  diagramUris?: string[];
+  diagramBase64s?: string[];
 } | null = null;
 
 export function setPendingScan(data: typeof pendingScanData) {

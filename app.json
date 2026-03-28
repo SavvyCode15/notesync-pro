@@ -35,6 +35,19 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "1a8ea8b1-3866-4e10-9a69-c196980dda0e"
+      }
+    },
+    "owner": "savvy04",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/1a8ea8b1-3866-4e10-9a69-c196980dda0e"
     }
   }
 }

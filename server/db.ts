@@ -50,6 +50,7 @@ export async function initDb(): Promise<void> {
       extracted_text TEXT DEFAULT '',
       notion_page_id TEXT,
       notion_page_title TEXT,
+      diagrams_base64 TEXT,
       status TEXT NOT NULL DEFAULT 'processing',
       created_at INTEGER DEFAULT (unixepoch())
     );
@@ -60,6 +61,7 @@ export async function initDb(): Promise<void> {
     "ALTER TABLE users ADD COLUMN groq_api_key TEXT",
     "ALTER TABLE scans ADD COLUMN title TEXT",
     "ALTER TABLE scans ADD COLUMN image_base64 TEXT",
+    "ALTER TABLE scans ADD COLUMN diagrams_base64 TEXT",
   ];
   for (const sql of migrations) {
     try { await db.execute(sql); } catch { /* column already exists */ }
