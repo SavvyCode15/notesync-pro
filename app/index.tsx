@@ -13,6 +13,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, Feather } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
 import * as Haptics from 'expo-haptics';
 import * as Crypto from 'expo-crypto';
 import Animated, { FadeInDown, FadeIn } from 'react-native-reanimated';
@@ -187,13 +188,25 @@ export default function HomeScreen() {
         return;
       }
 
-      const primaryAsset = result.assets[0];
-      const extraAssets = result.assets.slice(1);
+      // Process all images to standard JPEG + 1500px width to avoid slow HEIC conversions on Render free tier
+      const processedAssets = await Promise.all(
+        result.assets.map(a =>
+          ImageManipulator.manipulateAsync(
+            a.uri,
+            [{ resize: { width: Math.min(1500, a.width || 1500) } }],
+            { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG, base64: true }
+          )
+        )
+      );
+
+      const primaryAsset = processedAssets[0];
+      const extraAssets = processedAssets.slice(1);
       const scanId = Crypto.randomUUID();
 
       const newScan: ScanRecord = {
         id: scanId,
         imageUri: primaryAsset.uri,
+        title: 'Untitled Note',
         extractedText: '',
         createdAt: new Date().toISOString(),
         status: 'processing',

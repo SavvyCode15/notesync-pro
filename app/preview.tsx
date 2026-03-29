@@ -16,6 +16,7 @@ import { Image } from 'expo-image';
 import { Ionicons, Feather } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
 import * as Haptics from 'expo-haptics';
 import Animated, { FadeIn, FadeInDown, useAnimatedStyle, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated';
 import Colors from '@/constants/colors';
@@ -164,11 +165,18 @@ export default function PreviewScreen() {
         Alert.alert('Permission needed', 'Please grant camera access to add diagrams.');
         return;
       }
-      const result = await ImagePicker.launchCameraAsync({ base64: true, mediaTypes: 'images', quality: 0.7 });
-      if (!result.canceled && result.assets[0].base64) {
-        const uri = result.assets[0].uri;
-        const b64 = result.assets[0].base64;
-        
+      const result = await ImagePicker.launchCameraAsync({ mediaTypes: 'images', quality: 0.8 });
+      if (!result.canceled && result.assets[0].uri) {
+        // Compress and force JPEG to avoid HEIC issues on server
+        const processed = await ImageManipulator.manipulateAsync(
+          result.assets[0].uri,
+          [{ resize: { width: Math.min(1500, result.assets[0].width || 1500) } }],
+          { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG, base64: true }
+        );
+
+        if (!processed.base64) return;
+        const uri = processed.uri;
+        const b64 = processed.base64;
         const newUris = [...diagramUris, uri];
         const newB64s = [...diagramBase64s, b64];
         setDiagramUris(newUris);
