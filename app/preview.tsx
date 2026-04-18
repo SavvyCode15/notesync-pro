@@ -24,6 +24,7 @@ import { getPendingScan, setPendingUpload } from '@/lib/pending-scan';
 import { getScans, updateScan, type ScanRecord } from '@/lib/storage';
 import { getApiUrl } from '@/lib/query-client';
 import { useAuth } from '@/lib/auth-context';
+import { MermaidDiagram, extractMermaidBlocks } from '@/components/MermaidDiagram';
 
 export default function PreviewScreen() {
   const insets = useSafeAreaInsets();
@@ -317,6 +318,11 @@ export default function PreviewScreen() {
                   You can edit the text above before sending to Notion
                 </Text>
               )}
+
+              {/* Mermaid diagram previews */}
+              {extractMermaidBlocks(extractedText).map((code, i) => (
+                <MermaidDiagram key={i} code={code} index={i} />
+              ))}
             </Animated.View>
           ) : null}
         </ScrollView>
