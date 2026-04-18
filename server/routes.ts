@@ -261,11 +261,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ── Serve scan image (used for Notion image blocks) ───────
-  app.get("/api/scans/:id/image", authMiddleware, async (req: AuthRequest, res) => {
+  app.get("/api/scans/:id/image", async (req, res) => {
     try {
       const row = await dbGet<{ image_base64: string | null }>(
-        "SELECT image_base64 FROM scans WHERE id = ? AND user_id = ?",
-        [String(req.params.id), req.userId!]
+        "SELECT image_base64 FROM scans WHERE id = ?",
+        [String(req.params.id)]
       );
       if (!row?.image_base64) return res.status(404).json({ error: "Image not found" });
       const buffer = Buffer.from(row.image_base64, "base64");
@@ -278,15 +278,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ── Serve diagram images individually ─────────────────────
-  app.get("/api/scans/:id/diagram/:index", authMiddleware, async (req: AuthRequest, res) => {
+  app.get("/api/scans/:id/diagram/:index", async (req, res) => {
     try {
       const index = parseInt(String(req.params.index), 10);
       const row = await dbGet<{ diagrams_base64: string | null }>(
-        "SELECT diagrams_base64 FROM scans WHERE id = ? AND user_id = ?",
-        [String(req.params.id), req.userId!]
+        "SELECT diagrams_base64 FROM scans WHERE id = ?",
+        [String(req.params.id)]
       );
       if (!row?.diagrams_base64) return res.status(404).json({ error: "Diagrams not found" });
-      
+
       const diagrams = JSON.parse(row.diagrams_base64);
       const diagramBase64 = diagrams[index];
       if (!diagramBase64) return res.status(404).json({ error: "Diagram index not found" });
