@@ -43,3 +43,7 @@ export async function deleteScan(id: string): Promise<void> {
   const scans = await getScans();
   await AsyncStorage.setItem(SCANS_KEY, JSON.stringify(scans.filter(s => s.id !== id)));
 }
+
+export async function clearScans(): Promise<void> {
+  await AsyncStorage.removeItem(SCANS_KEY);
+}

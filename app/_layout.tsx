@@ -12,7 +12,7 @@ import { StatusBar } from 'expo-status-bar';
 import Colors from '@/constants/colors';
 import { AuthProvider, useAuth } from '@/lib/auth-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { ONBOARDING_KEY } from '@/app/onboarding';
+import { getOnboardingKey } from '@/app/onboarding';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -26,7 +26,7 @@ function RootNavigator() {
       router.replace('/auth');
     } else {
       // Check if this user has completed onboarding
-      AsyncStorage.getItem(ONBOARDING_KEY).then((done) => {
+      AsyncStorage.getItem(getOnboardingKey(user.id)).then((done) => {
         if (done) {
           router.replace('/');
         } else {

@@ -22,7 +22,11 @@ import { getApiUrl } from '@/lib/query-client';
 import { useAuth } from '@/lib/auth-context';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-export const ONBOARDING_KEY = '@notesync_onboarded';
+
+/** Returns the per-user AsyncStorage key for the onboarding completion flag */
+export function getOnboardingKey(userId: string) {
+  return `@notesync_onboarded_${userId}`;
+}
 
 // ── Slide data ───────────────────────────────────────────────
 type Slide = {
@@ -130,7 +134,9 @@ export default function OnboardingScreen() {
   }
 
   async function finishOnboarding() {
-    await AsyncStorage.setItem(ONBOARDING_KEY, 'true');
+    if (user?.id) {
+      await AsyncStorage.setItem(getOnboardingKey(user.id), 'true');
+    }
     router.replace('/');
   }
 

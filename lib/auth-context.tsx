@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getApiUrl } from '@/lib/query-client';
 import { router } from 'expo-router';
+import { clearScans } from '@/lib/storage';
 
 export interface AuthUser {
     id: string;
@@ -114,6 +115,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     async function logout() {
         await clearAuth();
+        await clearScans(); // Wipe local history so next user's scans don't bleed through
         router.replace('/auth');
     }
 
