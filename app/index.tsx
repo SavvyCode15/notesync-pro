@@ -281,6 +281,28 @@ export default function HomeScreen() {
         </Animated.View>
       )}
 
+      {/* Daily scan limit banner — shown when quota is exhausted */}
+      {limitReached && (
+        <Animated.View entering={FadeInDown.duration(350)} style={styles.limitBanner}>
+          <View style={styles.limitBannerLeft}>
+            <Ionicons name="lock-closed" size={15} color={Colors.danger} />
+            <View>
+              <Text style={styles.limitBannerTitle}>
+                Daily limit reached ({scanUsage?.used}/{scanUsage?.limit} scans)
+              </Text>
+              <Text style={styles.limitBannerSub}>Resets at midnight · Add your Groq key for unlimited</Text>
+            </View>
+          </View>
+          <Pressable
+            onPress={() => router.push('/settings')}
+            hitSlop={8}
+            style={({ pressed }) => [styles.limitBannerButton, pressed && { opacity: 0.7 }]}
+          >
+            <Text style={styles.limitBannerButtonText}>Unlock →</Text>
+          </Pressable>
+        </Animated.View>
+      )}
+
       {scans.length === 0 ? (
         <Animated.View entering={FadeInDown.delay(200).duration(500)} style={styles.emptyState}>
           <View style={styles.emptyIconWrap}>
@@ -581,5 +603,49 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_600SemiBold',
     fontSize: 12,
     color: Colors.background,
+  },
+  limitBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: Colors.danger + '12',
+    borderWidth: 1,
+    borderColor: Colors.danger + '35',
+    marginHorizontal: 20,
+    marginBottom: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    gap: 8,
+  },
+  limitBannerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+  },
+  limitBannerTitle: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 13,
+    color: Colors.danger,
+  },
+  limitBannerSub: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 11,
+    color: Colors.textTertiary,
+    marginTop: 1,
+  },
+  limitBannerButton: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    backgroundColor: Colors.danger + '20',
+    borderWidth: 1,
+    borderColor: Colors.danger + '40',
+    borderRadius: 8,
+  },
+  limitBannerButtonText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 12,
+    color: Colors.danger,
   },
 });
