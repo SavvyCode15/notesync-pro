@@ -82,7 +82,7 @@ function ScanCardItem({ item, onDelete }: { item: ScanRecord; onDelete: (id: str
 
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const [scans, setScans] = useState<ScanRecord[]>([]);
   const [showOptions, setShowOptions] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -246,6 +246,23 @@ export default function HomeScreen() {
           <Ionicons name="settings-outline" size={22} color={Colors.textSecondary} />
         </Pressable>
       </Animated.View>
+
+      {/* Notion nudge banner — shown only when Notion is not connected */}
+      {user && !user.notionConnected && (
+        <Animated.View entering={FadeIn.delay(300).duration(400)} style={styles.nudgeBanner}>
+          <Ionicons name="warning-outline" size={16} color={Colors.accent} />
+          <Text style={styles.nudgeText} numberOfLines={1}>
+            Connect Notion to start sending notes
+          </Text>
+          <Pressable
+            onPress={() => router.push('/settings')}
+            hitSlop={8}
+            style={({ pressed }) => [styles.nudgeButton, pressed && { opacity: 0.7 }]}
+          >
+            <Text style={styles.nudgeButtonText}>Connect →</Text>
+          </Pressable>
+        </Animated.View>
+      )}
 
       {scans.length === 0 ? (
         <Animated.View entering={FadeInDown.delay(200).duration(500)} style={styles.emptyState}>
@@ -498,5 +515,35 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.4,
     shadowRadius: 12,
     elevation: 8,
+  },
+  nudgeBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: Colors.accent + '15',
+    borderWidth: 1,
+    borderColor: Colors.accent + '35',
+    marginHorizontal: 20,
+    marginBottom: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+  },
+  nudgeText: {
+    flex: 1,
+    fontFamily: 'Inter_400Regular',
+    fontSize: 13,
+    color: Colors.text,
+  },
+  nudgeButton: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    backgroundColor: Colors.accent,
+    borderRadius: 8,
+  },
+  nudgeButtonText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 12,
+    color: Colors.background,
   },
 });

@@ -11,6 +11,8 @@ import { useFonts, Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_7
 import { StatusBar } from 'expo-status-bar';
 import Colors from '@/constants/colors';
 import { AuthProvider, useAuth } from '@/lib/auth-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { ONBOARDING_KEY } from '@/app/onboarding';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -23,7 +25,14 @@ function RootNavigator() {
     if (!user) {
       router.replace('/auth');
     } else {
-      router.replace('/');
+      // Check if this user has completed onboarding
+      AsyncStorage.getItem(ONBOARDING_KEY).then((done) => {
+        if (done) {
+          router.replace('/');
+        } else {
+          router.replace('/onboarding' as any);
+        }
+      });
     }
   }, [user, isLoading]);
 
@@ -47,6 +56,7 @@ function RootNavigator() {
     >
       <Stack.Screen name="index" />
       <Stack.Screen name="auth" options={{ animation: 'fade' }} />
+      <Stack.Screen name="onboarding" options={{ animation: 'fade', gestureEnabled: false }} />
       <Stack.Screen name="preview" options={{ animation: 'slide_from_right' }} />
       <Stack.Screen name="select-page" options={{ presentation: 'modal' }} />
       <Stack.Screen name="settings" options={{ animation: 'slide_from_right' }} />
