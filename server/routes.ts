@@ -61,10 +61,13 @@ Rules:
 - Lists: Use - for bullet points, 1. for numbered lists.
 - Callouts: If there is a starred, circled, highlighted, or highly important item, MUST prefix the entire line with: > ⭐
 - Tables: If you see any grid or tabular structure, use standard Github-flavored markdown tables (e.g. | Header 1 | Header 2 | followed by alignment row |---|---|).
-- Code Blocks: Use triple backticks for code.
+- Code Blocks: Use triple backticks with the language name for code (e.g. \`\`\`python).
+- Math / Equations: If you see ANY mathematical formula, equation, or expression (e.g. E=mc², integrals, fractions, Greek letters), wrap it in a \`\`\`latex code block. Example: \`\`\`latex\nE = mc^2\n\`\`\`
+- Diagrams: If you see a flow chart, state machine, sequence diagram, or any node-edge structure, output it as a \`\`\`mermaid code block using valid Mermaid.js syntax.
 - Unclear text: If unreadable, write [unclear] and continue.
 
 Do NOT add any conversational preamble. Return only the beautiful Markdown content.`;
+
 
   const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
