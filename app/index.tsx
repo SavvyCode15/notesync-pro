@@ -86,14 +86,18 @@ export default function HomeScreen() {
   const [scans, setScans] = useState<ScanRecord[]>([]);
   const [showOptions, setShowOptions] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [scanUsage, setScanUsage] = useState<{ used: number; limit: number } | null>(null);
 
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
   const bottomInset = Platform.OS === 'web' ? 34 : insets.bottom;
 
+  // Derived: is the free limit exhausted AND user hasn't added their own key?
+  const limitReached = !!(scanUsage && scanUsage.used >= scanUsage.limit);
+
   useFocusEffect(
     useCallback(() => {
       loadScans();
-    }, [])
+    }, [token])
   );
 
   async function loadScans() {
@@ -146,6 +150,19 @@ export default function HomeScreen() {
       setScans(merged);
     } catch {
       // Network unavailable — local cache is already shown, no action needed
+    }
+
+    // Fetch scan usage quota in parallel
+    if (token) {
+      try {
+        const usageResp = await fetch(new URL('/api/user/scan-usage', getApiUrl()).toString(), {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (usageResp.ok) {
+          const usageData = await usageResp.json();
+          setScanUsage({ used: usageData.used, limit: usageData.limit });
+        }
+      } catch { }
     }
   }
 
@@ -310,10 +327,22 @@ export default function HomeScreen() {
         <Pressable
           style={({ pressed }) => [
             styles.fab,
-            pressed && { transform: [{ scale: 0.92 }] },
+            pressed && !limitReached && { transform: [{ scale: 0.92 }] },
             loading && { opacity: 0.6 },
+            limitReached && styles.fabLocked,
           ]}
           onPress={() => {
+            if (limitReached) {
+              Alert.alert(
+                '🔒 Daily Limit Reached',
+                `You've used all ${scanUsage?.limit} free scans today. Reset happens at midnight.\n\nAdd your own Groq API key in Settings for unlimited access.`,
+                [
+                  { text: 'Go to Settings', onPress: () => router.push('/settings') },
+                  { text: 'OK', style: 'cancel' },
+                ]
+              );
+              return;
+            }
             if (!loading) {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
               setShowOptions(!showOptions);
@@ -323,6 +352,8 @@ export default function HomeScreen() {
         >
           {loading ? (
             <ActivityIndicator color={Colors.background} size="small" />
+          ) : limitReached ? (
+            <Ionicons name="lock-closed" size={26} color={Colors.background} />
           ) : (
             <Ionicons name={showOptions ? "close" : "scan"} size={28} color={Colors.background} />
           )}
@@ -515,6 +546,11 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.4,
     shadowRadius: 12,
     elevation: 8,
+  },
+  fabLocked: {
+    backgroundColor: Colors.surfaceHighlight,
+    shadowColor: Colors.danger,
+    shadowOpacity: 0.25,
   },
   nudgeBanner: {
     flexDirection: 'row',
